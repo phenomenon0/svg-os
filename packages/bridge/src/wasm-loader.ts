@@ -19,6 +19,7 @@ export interface SvgOsWasm {
   svg_os_can_undo(): boolean;
   svg_os_can_redo(): boolean;
   svg_os_get_render_ops(): string;
+  svg_os_full_render(): string;
   svg_os_get_document_json(): string;
   svg_os_root_id(): string;
   svg_os_defs_id(): string;

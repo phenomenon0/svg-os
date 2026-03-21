@@ -13,7 +13,7 @@ import {
   loadWasm,
   rootId, createNode, removeNode, setAttr,
   undo, redo, canUndo, canRedo,
-  getRenderOps, applyOps, resetElementMap,
+  getRenderOps, getFullRenderOps, applyOps, resetElementMap,
   importSvg, exportSvg, getElement,
 } from "@svg-os/bridge";
 
@@ -58,10 +58,13 @@ function render() {
 }
 
 function fullRerender() {
-  // Clear DOM and re-render from scratch
+  // Clear DOM and re-render from scratch using full render (not diff)
   container.innerHTML = "";
   resetElementMap();
-  render();
+  const ops = getFullRenderOps();
+  applyOps(container, ops);
+  deselectNode();
+  updateStatus();
 }
 
 function updateStatus() {

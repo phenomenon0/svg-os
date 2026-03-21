@@ -16,7 +16,7 @@ export {
   importSvg, exportSvg, rootId, defsId,
   createNode, removeNode, setAttr, removeAttr, reparent,
   undo, redo, canUndo, canRedo,
-  getRenderOps, getDocumentJson,
+  getRenderOps, getFullRenderOps, getDocumentJson,
   addEffect, removeEffect,
   addConstraint, solveConstraints,
   bind, evaluateBindings,

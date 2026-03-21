@@ -73,6 +73,12 @@ export function getRenderOps(): SvgDomOp[] {
   return JSON.parse(json);
 }
 
+/** Reset the diff engine and return a complete render. Use after undo/redo or DOM clear. */
+export function getFullRenderOps(): SvgDomOp[] {
+  const json = getWasm().svg_os_full_render();
+  return JSON.parse(json);
+}
+
 /** Get the full document as JSON (for debugging). */
 export function getDocumentJson(): unknown {
   return JSON.parse(getWasm().svg_os_get_document_json());

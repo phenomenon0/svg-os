@@ -271,6 +271,19 @@ pub fn svg_os_get_render_ops() -> String {
     })
 }
 
+/// Reset the diff engine and return a full render.
+/// Call this after undo/redo or when the TS-side DOM has been cleared.
+#[wasm_bindgen]
+pub fn svg_os_full_render() -> String {
+    with_engine(|e| {
+        // Clear dirty/removed so full_render starts clean
+        e.doc.take_dirty();
+        e.doc.take_removed();
+        let ops = e.diff.full_render(&e.doc);
+        serde_json::to_string(&ops).unwrap_or_else(|_| "[]".to_string())
+    })
+}
+
 /// Get the full document as JSON (for debugging).
 #[wasm_bindgen]
 pub fn svg_os_get_document_json() -> String {
