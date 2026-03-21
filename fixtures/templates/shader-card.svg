@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1080" height="1080" viewBox="0 0 1080 1080" data-card-width="1080" data-card-height="1080">
+  <defs>
+    <!-- Vignette -->
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.6"/>
+    </radialGradient>
+
+    <!-- Scan line pattern -->
+    <pattern id="scanlines" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+      <line x1="0" y1="0" x2="4" y2="0" stroke="#000000" stroke-opacity="0.08" stroke-width="1"/>
+    </pattern>
+
+    <!-- Crosshair grid -->
+    <pattern id="grid-fine" x="0" y="0" width="108" height="108" patternUnits="userSpaceOnUse">
+      <line x1="54" y1="0" x2="54" y2="108" stroke="#ffffff" stroke-opacity="0.03" stroke-width="0.5"/>
+      <line x1="0" y1="54" x2="108" y2="54" stroke="#ffffff" stroke-opacity="0.03" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+
+  <!-- Shader-generated background — href replaced at render time -->
+  <image x="0" y="0" width="1080" height="1080"
+         data-bind-attr-href="shader_bg"
+         preserveAspectRatio="xMidYMid slice"
+         href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+         xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="/>
+
+  <!-- Dark overlay for legibility — heavier to guarantee contrast on all patterns -->
+  <rect width="1080" height="1080" fill="#000000" opacity="0.5"/>
+
+  <!-- Vignette -->
+  <rect width="1080" height="1080" fill="url(#vignette)"/>
+
+  <!-- Scan lines -->
+  <rect width="1080" height="1080" fill="url(#scanlines)"/>
+
+  <!-- Fine grid overlay -->
+  <rect width="1080" height="1080" fill="url(#grid-fine)"/>
+
+  <!-- Corner frames — double line -->
+  <polyline points="70,110 70,70 110,70" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1"/>
+  <polyline points="78,118 78,78 118,78" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="0.5"/>
+  <polyline points="970,70 1010,70 1010,110" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1"/>
+  <polyline points="962,78 1002,78 1002,118" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="0.5"/>
+  <polyline points="70,970 70,1010 110,1010" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1"/>
+  <polyline points="78,962 78,1002 118,1002" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="0.5"/>
+  <polyline points="970,1010 1010,1010 1010,970" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1"/>
+  <polyline points="962,1002 1002,1002 1002,962" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="0.5"/>
+
+  <!-- GPU badge (top-left) -->
+  <rect x="70" y="140" width="82" height="26" rx="13" fill="#ffffff" fill-opacity="0.08"/>
+  <rect x="70" y="140" width="82" height="26" rx="13" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="0.5"/>
+  <circle cx="86" cy="153" r="3" fill="#4ade80" opacity="0.8"/>
+  <text x="120" y="158" text-anchor="middle" font-family="'DM Mono', monospace" font-size="9" font-weight="500" fill="#ffffff" fill-opacity="0.6" letter-spacing="0.08em">GPU</text>
+
+  <!-- Render info (top-right) -->
+  <text x="1010" y="150" text-anchor="end" font-family="'DM Mono', monospace" font-size="9" fill="#ffffff" fill-opacity="0.2" letter-spacing="0.06em" data-bind="render_info">WGSL · 1080px · 60fps</text>
+  <text x="1010" y="166" text-anchor="end" font-family="'DM Mono', monospace" font-size="9" fill="#ffffff" fill-opacity="0.15" letter-spacing="0.06em" data-bind="seed_info">SEED: 42</text>
+
+  <!-- Center crosshair -->
+  <line x1="530" y1="400" x2="550" y2="400" stroke="#ffffff" stroke-opacity="0.1" stroke-width="0.5"/>
+  <line x1="540" y1="390" x2="540" y2="410" stroke="#ffffff" stroke-opacity="0.1" stroke-width="0.5"/>
+
+  <!-- Text shadow/glow for extra contrast -->
+  <text x="540" y="510" text-anchor="middle" font-family="'Syne', sans-serif" font-size="84" font-weight="800" fill="#000000" fill-opacity="0.4" letter-spacing="-0.03em" data-bind="title">NEBULA</text>
+
+  <!-- Title — Syne for dramatic display weight, smaller to fit long titles -->
+  <text x="540" y="508" text-anchor="middle" font-family="'Syne', sans-serif" font-size="84" font-weight="800" fill="#ffffff" letter-spacing="-0.03em" data-bind="title">NEBULA</text>
+
+  <!-- Subtitle — Outfit for airy contrast with Syne's heaviness -->
+  <text x="540" y="564" text-anchor="middle" font-family="'Outfit', sans-serif" font-size="20" font-weight="300" fill="#ffffff" fill-opacity="0.75" letter-spacing="0.08em" data-bind="subtitle">Deep space generative art</text>
+
+  <!-- Decorative divider with dots -->
+  <line x1="420" y1="610" x2="520" y2="610" stroke="#ffffff" stroke-opacity="0.2" stroke-width="0.5"/>
+  <circle cx="540" cy="610" r="2" fill="#ffffff" fill-opacity="0.3"/>
+  <line x1="560" y1="610" x2="660" y2="610" stroke="#ffffff" stroke-opacity="0.2" stroke-width="0.5"/>
+
+  <!-- Pattern type label — monospace for that terminal feel -->
+  <text x="540" y="650" text-anchor="middle" font-family="'DM Mono', monospace" font-size="11" font-weight="400" fill="#ffffff" fill-opacity="0.35" letter-spacing="0.2em" data-bind="pattern_label">PLASMA SHADER</text>
+
+  <!-- Bottom data readout bar -->
+  <rect x="70" y="920" width="940" height="1" fill="#ffffff" opacity="0.06"/>
+
+  <!-- Bottom-left: shader parameters -->
+  <text x="80" y="955" font-family="'DM Mono', monospace" font-size="9" fill="#ffffff" fill-opacity="0.2" letter-spacing="0.06em" data-bind="params_line">COLOR_A: #6B21A8 · COLOR_B: #EC4899</text>
+
+  <!-- Bottom: branding -->
+  <text x="540" y="990" text-anchor="middle" font-family="'Space Grotesk', sans-serif" font-size="10" font-weight="600" fill="#ffffff" fill-opacity="0.2" letter-spacing="0.2em">SVG OS · GPU ACCELERATED</text>
+
+  <!-- Bottom-right: frame counter -->
+  <text x="1000" y="955" text-anchor="end" font-family="'DM Mono', monospace" font-size="9" fill="#ffffff" fill-opacity="0.15" letter-spacing="0.06em">FRM 001/001</text>
+
+  <!-- Decorative: floating measurement marks on edges -->
+  <line x1="540" y1="40" x2="540" y2="55" stroke="#ffffff" stroke-opacity="0.08" stroke-width="0.5"/>
+  <line x1="540" y1="1025" x2="540" y2="1040" stroke="#ffffff" stroke-opacity="0.08" stroke-width="0.5"/>
+  <line x1="40" y1="540" x2="55" y2="540" stroke="#ffffff" stroke-opacity="0.08" stroke-width="0.5"/>
+  <line x1="1025" y1="540" x2="1040" y2="540" stroke="#ffffff" stroke-opacity="0.08" stroke-width="0.5"/>
+</svg>

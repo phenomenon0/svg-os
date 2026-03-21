@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="480" viewBox="0 0 360 480" data-card-width="360" data-card-height="480">
+  <defs>
+    <linearGradient id="team-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f0f1a"/>
+      <stop offset="100%" stop-color="#0a0a12"/>
+    </linearGradient>
+    <clipPath id="avatar-clip">
+      <circle cx="180" cy="130" r="60"/>
+    </clipPath>
+    <pattern id="team-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="12" cy="12" r="0.4" fill="#ffffff" opacity="0.04"/>
+    </pattern>
+  </defs>
+
+  <rect width="360" height="480" rx="16" fill="url(#team-bg)"/>
+  <rect width="360" height="480" rx="16" fill="url(#team-dots)"/>
+  <rect width="360" height="480" rx="16" fill="none" stroke="#ffffff" stroke-opacity="0.03" stroke-width="1"/>
+
+  <!-- Top accent stripe -->
+  <rect x="0" y="0" width="360" height="4" fill="#f59e0b" data-bind-fill="accent_color"/>
+
+  <!-- Decorative circles -->
+  <circle cx="300" cy="50" r="80" fill="#f59e0b" opacity="0.03" data-bind-fill="accent_color"/>
+  <circle cx="50" cy="420" r="60" fill="#f59e0b" opacity="0.02" data-bind-fill="accent_color"/>
+
+  <!-- Corner marks -->
+  <line x1="20" y1="20" x2="40" y2="20" stroke="#ffffff" stroke-opacity="0.08" stroke-width="0.5"/>
+  <line x1="20" y1="20" x2="20" y2="40" stroke="#ffffff" stroke-opacity="0.08" stroke-width="0.5"/>
+  <line x1="340" y1="460" x2="320" y2="460" stroke="#ffffff" stroke-opacity="0.08" stroke-width="0.5"/>
+  <line x1="340" y1="460" x2="340" y2="440" stroke="#ffffff" stroke-opacity="0.08" stroke-width="0.5"/>
+
+  <!-- Avatar photo -->
+  <circle cx="180" cy="130" r="62" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+  <circle cx="180" cy="130" r="66" fill="none" stroke-width="0.5" stroke-opacity="0.04" data-bind-attr-stroke="accent_color" stroke="#f59e0b"/>
+  <image href="data:image/jpeg;base64,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" x="120" y="70" width="120" height="120" clip-path="url(#avatar-clip)" preserveAspectRatio="xMidYMid slice"/>
+
+  <!-- Name — Space Grotesk -->
+  <text x="180" y="225" text-anchor="middle" font-family="'Space Grotesk', sans-serif" font-size="22" font-weight="700" fill="#f8fafc" data-bind="name">Team Member</text>
+
+  <!-- Role — accent color -->
+  <text x="180" y="252" text-anchor="middle" font-family="'Outfit', sans-serif" font-size="13" fill="#f59e0b" font-weight="400" data-bind="role">Role Title</text>
+
+  <!-- Company — DM Mono -->
+  <text x="180" y="275" text-anchor="middle" font-family="'DM Mono', monospace" font-size="10" fill="#64748b" letter-spacing="0.08em" data-bind="company">Company</text>
+
+  <!-- Divider with accent dot -->
+  <line x1="60" y1="300" x2="170" y2="300" stroke="#ffffff" stroke-opacity="0.04" stroke-width="0.5"/>
+  <circle cx="180" cy="300" r="1.5" data-bind-fill="accent_color" fill="#f59e0b" fill-opacity="0.4"/>
+  <line x1="190" y1="300" x2="300" y2="300" stroke="#ffffff" stroke-opacity="0.04" stroke-width="0.5"/>
+
+  <!-- Quote — Instrument Serif for elegant italic -->
+  <text x="180" y="330" text-anchor="middle" font-family="'Instrument Serif', serif" font-size="15" fill="#94a3b8" font-style="italic">"</text>
+  <text x="180" y="350" text-anchor="middle" font-family="'Instrument Serif', serif" font-size="14" fill="#94a3b8" font-style="italic" data-bind="quote">Favorite quote goes here</text>
+  <text x="180" y="370" text-anchor="middle" font-family="'Instrument Serif', serif" font-size="15" fill="#94a3b8" font-style="italic">"</text>
+
+  <!-- Social links -->
+  <g transform="translate(0, 400)">
+    <rect x="60" y="0" width="240" height="36" rx="8" fill="#ffffff" fill-opacity="0.02" stroke="#ffffff" stroke-opacity="0.04" stroke-width="0.5"/>
+    <text x="120" y="23" text-anchor="middle" font-family="'DM Mono', monospace" font-size="10" fill="#64748b" data-bind="social_1">@handle</text>
+    <line x1="180" y1="8" x2="180" y2="28" stroke="#ffffff" stroke-opacity="0.06" stroke-width="0.5"/>
+    <text x="240" y="23" text-anchor="middle" font-family="'DM Mono', monospace" font-size="10" fill="#64748b" data-bind="social_2">linkedin</text>
+  </g>
+
+  <!-- Location — Outfit light -->
+  <text x="180" y="468" text-anchor="middle" font-family="'Outfit', sans-serif" font-size="11" font-weight="300" fill="#475569" data-bind="location">San Francisco, CA</text>
+</svg>

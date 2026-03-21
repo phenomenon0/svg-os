@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" data-card-width="1080" data-card-height="1080">
+  <defs>
+    <!-- Background gradient — 3 stops for full atmosphere control -->
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c3aed" data-bind-stop="color_a"/>
+      <stop offset="50%" stop-color="#be185d" data-bind-stop="color_b"/>
+      <stop offset="100%" stop-color="#1e1b4b" data-bind-stop="color_c"/>
+    </linearGradient>
+
+    <!-- Glow overlay — radial, bound to color_a -->
+    <radialGradient id="glow-grad" cx="25%" cy="25%" r="80%">
+      <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.35" data-bind-stop="color_a"/>
+      <stop offset="60%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Secondary glow — bottom right, color_b -->
+    <radialGradient id="glow-grad-2" cx="85%" cy="80%" r="60%">
+      <stop offset="0%" stop-color="#be185d" stop-opacity="0.2" data-bind-stop="color_b"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Accent bar gradient — color_a to color_b -->
+    <linearGradient id="accent-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7c3aed" data-bind-stop="color_a"/>
+      <stop offset="100%" stop-color="#be185d" data-bind-stop="color_b"/>
+    </linearGradient>
+
+    <!-- Grid pattern -->
+    <pattern id="grid-dots" x="0" y="0" width="60" height="60" patternUnits="userSpaceOnUse">
+      <circle cx="30" cy="30" r="0.8" fill="#ffffff" opacity="0.08"/>
+    </pattern>
+
+    <!-- Clip for the inner frame -->
+    <clipPath id="inner-clip">
+      <rect x="60" y="60" width="960" height="960" rx="8"/>
+    </clipPath>
+  </defs>
+
+  <!-- Base background -->
+  <rect width="1080" height="1080" fill="url(#bg-grad)"/>
+
+  <!-- Glow overlays -->
+  <rect width="1080" height="1080" fill="url(#glow-grad)"/>
+  <rect width="1080" height="1080" fill="url(#glow-grad-2)"/>
+
+  <!-- Dot grid -->
+  <rect width="1080" height="1080" fill="url(#grid-dots)" clip-path="url(#inner-clip)"/>
+
+  <!-- Large decorative circle rings -->
+  <circle cx="820" cy="180" r="340" fill="none" stroke-width="0.5" stroke-opacity="0.12" data-bind-attr-stroke="color_a" stroke="#7c3aed"/>
+  <circle cx="820" cy="180" r="280" fill="none" stroke-width="0.5" stroke-opacity="0.09" data-bind-attr-stroke="color_a" stroke="#7c3aed"/>
+  <circle cx="820" cy="180" r="220" fill="none" stroke-width="0.5" stroke-opacity="0.06" data-bind-attr-stroke="color_b" stroke="#be185d"/>
+  <circle cx="180" cy="920" r="240" fill="none" stroke-width="0.5" stroke-opacity="0.1" data-bind-attr-stroke="color_b" stroke="#be185d"/>
+  <circle cx="180" cy="920" r="180" fill="none" stroke-width="0.5" stroke-opacity="0.07" data-bind-attr-stroke="color_a" stroke="#7c3aed"/>
+
+  <!-- Diagonal decorative lines -->
+  <line x1="700" y1="0" x2="1080" y2="380" stroke-width="0.5" stroke-opacity="0.06" stroke="#ffffff"/>
+  <line x1="750" y1="0" x2="1080" y2="330" stroke-width="0.5" stroke-opacity="0.04" stroke="#ffffff"/>
+  <line x1="0" y1="700" x2="380" y2="1080" stroke-width="0.5" stroke-opacity="0.05" stroke="#ffffff"/>
+
+  <!-- Vertical accent lines -->
+  <line x1="80" y1="0" x2="80" y2="1080" stroke-width="0.5" stroke-opacity="0.06" data-bind-attr-stroke="color_a" stroke="#7c3aed"/>
+  <line x1="1000" y1="0" x2="1000" y2="1080" stroke-width="0.5" stroke-opacity="0.06" data-bind-attr-stroke="color_b" stroke="#be185d"/>
+
+  <!-- Floating particles -->
+  <circle cx="920" cy="450" r="2" fill-opacity="0.5" data-bind-fill="color_a" fill="#7c3aed"/>
+  <circle cx="870" cy="520" r="1.5" fill-opacity="0.35" data-bind-fill="color_b" fill="#be185d"/>
+  <circle cx="950" cy="380" r="1" fill-opacity="0.4" data-bind-fill="color_a" fill="#7c3aed"/>
+  <circle cx="160" cy="300" r="1.5" fill-opacity="0.3" data-bind-fill="color_b" fill="#be185d"/>
+  <circle cx="200" cy="260" r="1" fill-opacity="0.25" data-bind-fill="color_a" fill="#7c3aed"/>
+  <circle cx="500" cy="140" r="1.2" fill-opacity="0.2" fill="#ffffff"/>
+  <circle cx="680" cy="900" r="1.5" fill-opacity="0.15" fill="#ffffff"/>
+  <circle cx="400" cy="950" r="1" fill-opacity="0.2" fill="#ffffff"/>
+
+  <!-- Corner marks (frame within frame) -->
+  <line x1="60" y1="60" x2="140" y2="60" stroke="#ffffff" stroke-opacity="0.2" stroke-width="1"/>
+  <line x1="60" y1="60" x2="60" y2="140" stroke="#ffffff" stroke-opacity="0.2" stroke-width="1"/>
+  <line x1="1020" y1="60" x2="940" y2="60" stroke="#ffffff" stroke-opacity="0.2" stroke-width="1"/>
+  <line x1="1020" y1="60" x2="1020" y2="140" stroke="#ffffff" stroke-opacity="0.2" stroke-width="1"/>
+  <line x1="60" y1="1020" x2="140" y2="1020" stroke="#ffffff" stroke-opacity="0.2" stroke-width="1"/>
+  <line x1="60" y1="1020" x2="60" y2="940" stroke="#ffffff" stroke-opacity="0.2" stroke-width="1"/>
+  <line x1="1020" y1="1020" x2="940" y2="1020" stroke="#ffffff" stroke-opacity="0.2" stroke-width="1"/>
+  <line x1="1020" y1="1020" x2="1020" y2="940" stroke="#ffffff" stroke-opacity="0.2" stroke-width="1"/>
+
+  <!-- Top-left: small accent dots -->
+  <circle cx="120" cy="120" r="3.5" fill-opacity="0.6" data-bind-fill="color_a" fill="#7c3aed"/>
+  <circle cx="138" cy="120" r="3.5" fill-opacity="0.4" data-bind-fill="color_b" fill="#be185d"/>
+  <circle cx="156" cy="120" r="3.5" fill-opacity="0.25" data-bind-fill="color_a" fill="#7c3aed"/>
+
+  <!-- Top-right: coordinate marker -->
+  <text x="960" y="118" text-anchor="end" font-family="'DM Mono', monospace" font-size="10" fill="#ffffff" fill-opacity="0.2" letter-spacing="0.05em">1080 x 1080</text>
+
+  <!-- Accent bar -->
+  <rect x="120" y="360" width="240" height="3" rx="1.5" fill="url(#accent-grad)"/>
+
+  <!-- Edition / category label -->
+  <text x="120" y="340" font-family="'DM Mono', monospace" font-size="11" fill="#ffffff" fill-opacity="0.4" letter-spacing="0.2em" data-bind="edition">EDITION 001</text>
+
+  <!-- Brand name — Space Grotesk for geometric display type -->
+  <text x="120" y="460" font-family="'Space Grotesk', sans-serif" font-size="76" font-weight="700" fill="#ffffff" letter-spacing="-0.03em" data-bind="brand_name">NEBULA LABS</text>
+
+  <!-- Tagline — Outfit for clean, airy subtext -->
+  <text x="122" y="520" font-family="'Outfit', sans-serif" font-size="24" font-weight="300" fill="#ffffff" fill-opacity="0.65" data-bind="tagline">Designed for the future</text>
+
+  <!-- Description / body text -->
+  <text x="122" y="580" font-family="'Plus Jakarta Sans', sans-serif" font-size="15" fill="#ffffff" fill-opacity="0.4" data-bind="body">Where innovation meets intention. Built for what comes next.</text>
+
+  <!-- CTA button -->
+  <rect x="120" y="630" width="200" height="48" rx="24" fill="#ffffff" fill-opacity="0.12"/>
+  <rect x="120" y="630" width="200" height="48" rx="24" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1"/>
+  <text x="220" y="660" text-anchor="middle" font-family="'Space Grotesk', sans-serif" font-size="13" font-weight="600" fill="#ffffff" letter-spacing="0.12em" data-bind="cta">EXPLORE</text>
+
+  <!-- Bottom detail bar -->
+  <line x1="120" y1="880" x2="960" y2="880" stroke="#ffffff" stroke-opacity="0.06" stroke-width="0.5"/>
+
+  <!-- Stats / metrics row -->
+  <text x="120" y="920" font-family="'Space Grotesk', sans-serif" font-size="28" font-weight="700" fill="#ffffff" fill-opacity="0.9" data-bind="metric_value">2.4M+</text>
+  <text x="120" y="942" font-family="'DM Mono', monospace" font-size="10" fill="#ffffff" fill-opacity="0.3" letter-spacing="0.1em" data-bind="metric_label">IMPRESSIONS</text>
+
+  <text x="320" y="920" font-family="'Space Grotesk', sans-serif" font-size="28" font-weight="700" fill="#ffffff" fill-opacity="0.9" data-bind="metric_value_2">98%</text>
+  <text x="320" y="942" font-family="'DM Mono', monospace" font-size="10" fill="#ffffff" fill-opacity="0.3" letter-spacing="0.1em" data-bind="metric_label_2">SATISFACTION</text>
+
+  <!-- Detail text — bottom -->
+  <text x="120" y="1000" font-family="'DM Mono', monospace" font-size="10" fill="#ffffff" fill-opacity="0.25" letter-spacing="0.15em" data-bind="detail">CRAFTED WITH PRECISION</text>
+
+  <!-- Bottom accent gradient line -->
+  <rect x="120" y="1015" width="840" height="2" rx="1" fill="url(#accent-grad)" opacity="0.4"/>
+
+  <!-- Decorative glyph — abstract diamond at far right -->
+  <g transform="translate(920, 640) rotate(45)" opacity="0.08">
+    <rect x="-30" y="-30" width="60" height="60" fill="none" stroke="#ffffff" stroke-width="1"/>
+    <rect x="-18" y="-18" width="36" height="36" fill="none" stroke="#ffffff" stroke-width="0.5"/>
+  </g>
+</svg>

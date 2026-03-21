@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="280" viewBox="0 0 480 280" data-card-width="480" data-card-height="280">
+  <defs>
+    <filter id="glow-ring">
+      <feGaussianBlur stdDeviation="5" in="SourceGraphic" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="particle-noise">
+      <feTurbulence baseFrequency="0.4" numOctaves="2" type="fractalNoise" result="noise"/>
+      <feColorMatrix type="saturate" values="0"/>
+    </filter>
+
+    <radialGradient id="icon-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.3" data-bind-stop="color_a"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="neon-border">
+      <feGaussianBlur stdDeviation="3" in="SourceGraphic" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <pattern id="dot-grid" width="16" height="16" patternUnits="userSpaceOnUse">
+      <circle cx="8" cy="8" r="0.5" fill="#fff" opacity="0.06"/>
+    </pattern>
+  </defs>
+
+  <!-- 1. Dark background -->
+  <rect width="480" height="280" fill="#0d0d12"/>
+
+  <!-- 2. Dot grid -->
+  <rect width="480" height="280" fill="url(#dot-grid)"/>
+
+  <!-- 3. Achievement icon area -->
+  <circle cx="90" cy="120" r="45" fill="url(#icon-glow)"/>
+  <circle cx="90" cy="120" r="35" fill="#1a1a24" data-bind-fill="icon_bg" stroke="#f59e0b" stroke-width="2" data-bind-attr-stroke="color_a" filter="url(#glow-ring)"/>
+  <path d="M82,110 L90,95 L98,110 L95,110 L95,125 L85,125 L85,110 Z" fill="#f59e0b" data-bind-fill="color_a"/>
+
+  <!-- 4. Achievement name -->
+  <text x="155" y="105" font-family="'Syne', sans-serif" font-weight="700" font-size="20" fill="#fff" data-bind="name">DRAGON SLAYER</text>
+
+  <!-- 5. Description -->
+  <text x="155" y="128" font-family="'Plus Jakarta Sans', sans-serif" font-size="12" fill="#fff" fill-opacity="0.6" data-bind="description">Defeat the ancient dragon in under 2 minutes</text>
+
+  <!-- 6. Rarity badge -->
+  <rect x="155" y="140" width="95" height="22" rx="11" fill="#f59e0b" fill-opacity="0.15" data-bind-attr-fill="color_a"/>
+  <text x="202" y="155" text-anchor="middle" font-family="'DM Mono', monospace" font-size="9" letter-spacing="0.1em" fill="#f59e0b" data-bind-fill="color_a" data-bind="rarity">LEGENDARY</text>
+
+  <!-- 7. XP reward -->
+  <text x="265" y="155" font-family="'Space Grotesk', sans-serif" font-weight="700" font-size="16" fill="#f59e0b" data-bind="xp">+2500 XP</text>
+
+  <!-- 8. Progress bar -->
+  <rect x="155" y="195" width="280" height="6" rx="3" fill="#fff" fill-opacity="0.06"/>
+  <rect x="155" y="195" width="280" height="6" rx="3" fill="#f59e0b" fill-opacity="0.5" data-bind-attr-fill="color_a" data-bind-attr-width="progress_width"/>
+  <text x="155" y="220" font-family="'DM Mono', monospace" font-size="9" fill="#fff" opacity="0.4" data-bind="progress">100%</text>
+  <text x="435" y="220" text-anchor="end" font-family="'DM Mono', monospace" font-size="9" fill="#fff" opacity="0.3" data-bind="date">MAR 21, 2026</text>
+
+  <!-- 9. Particle sparkle overlay -->
+  <rect x="0" y="0" width="480" height="280" filter="url(#particle-noise)" opacity="0.03"/>
+
+  <!-- 10. Neon border -->
+  <rect x="6" y="6" width="468" height="268" rx="10" fill="none" stroke="#f59e0b" stroke-width="1.5" data-bind-attr-stroke="color_a" filter="url(#neon-border)"/>
+</svg>

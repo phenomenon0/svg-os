@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500" viewBox="0 0 400 500" data-card-width="400" data-card-height="500">
+  <defs>
+    <linearGradient id="price-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f0f1a"/>
+      <stop offset="100%" stop-color="#0a0a12"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.01"/>
+    </linearGradient>
+    <linearGradient id="price-accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+    <pattern id="price-dots" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="10" cy="10" r="0.4" fill="#ffffff" opacity="0.03"/>
+    </pattern>
+  </defs>
+
+  <rect width="400" height="500" rx="20" fill="url(#price-bg)"/>
+  <rect width="400" height="500" rx="20" fill="url(#glass)"/>
+  <rect width="400" height="500" rx="20" fill="url(#price-dots)"/>
+  <rect width="400" height="500" rx="20" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
+
+  <!-- Decorative glow -->
+  <circle cx="200" cy="0" r="150" fill="#f59e0b" opacity="0.03"/>
+
+  <!-- Corner marks -->
+  <line x1="20" y1="20" x2="40" y2="20" stroke="#ffffff" stroke-opacity="0.06" stroke-width="0.5"/>
+  <line x1="20" y1="20" x2="20" y2="40" stroke="#ffffff" stroke-opacity="0.06" stroke-width="0.5"/>
+
+  <!-- Popular badge -->
+  <rect x="130" y="20" width="140" height="28" rx="14" fill="url(#price-accent)" data-bind-fill="badge_color"/>
+  <text x="200" y="39" text-anchor="middle" font-family="'Space Grotesk', sans-serif" font-size="10" font-weight="700" fill="#0a0a0a" letter-spacing="0.06em" data-bind="badge_text">MOST POPULAR</text>
+
+  <!-- Tier name — Syne for bold display -->
+  <text x="200" y="95" text-anchor="middle" font-family="'Syne', sans-serif" font-size="26" font-weight="800" fill="#f8fafc" data-bind="tier_name">Pro</text>
+
+  <!-- Price — Space Grotesk for clean numbers -->
+  <text x="160" y="155" text-anchor="middle" font-family="'Space Grotesk', sans-serif" font-size="56" font-weight="700" fill="#f8fafc" data-bind="price">9</text>
+  <text x="230" y="145" font-family="'Outfit', sans-serif" font-size="16" font-weight="300" fill="#64748b" data-bind="period">/month</text>
+
+  <!-- Description — Outfit -->
+  <text x="200" y="190" text-anchor="middle" font-family="'Outfit', sans-serif" font-size="13" font-weight="300" fill="#64748b" data-bind="description">For growing teams</text>
+
+  <!-- Divider -->
+  <line x1="40" y1="215" x2="360" y2="215" stroke="#ffffff" stroke-opacity="0.04" stroke-width="0.5"/>
+
+  <!-- Features — Plus Jakarta Sans -->
+  <g font-family="'Plus Jakarta Sans', sans-serif" font-size="13" fill="#cbd5e1">
+    <text x="60" y="250"><tspan fill="#22c55e" font-family="sans-serif">✓</tspan>  <tspan data-bind="feature_1">Unlimited projects</tspan></text>
+    <text x="60" y="280"><tspan fill="#22c55e" font-family="sans-serif">✓</tspan>  <tspan data-bind="feature_2">Priority support</tspan></text>
+    <text x="60" y="310"><tspan fill="#22c55e" font-family="sans-serif">✓</tspan>  <tspan data-bind="feature_3">Custom domains</tspan></text>
+    <text x="60" y="340"><tspan fill="#22c55e" font-family="sans-serif">✓</tspan>  <tspan data-bind="feature_4">Analytics dashboard</tspan></text>
+    <text x="60" y="370"><tspan fill="#22c55e" font-family="sans-serif">✓</tspan>  <tspan data-bind="feature_5">API access</tspan></text>
+  </g>
+
+  <!-- CTA Button -->
+  <rect x="40" y="415" width="320" height="50" rx="25" fill="url(#price-accent)" data-bind-fill="cta_color"/>
+  <text x="200" y="446" text-anchor="middle" font-family="'Space Grotesk', sans-serif" font-size="14" font-weight="700" fill="#0a0a0a" letter-spacing="0.04em" data-bind="cta">Get Started</text>
+</svg>

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="630" viewBox="0 0 1200 630" data-card-width="1200" data-card-height="630">
+  <defs>
+    <linearGradient id="port-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a0a"/>
+      <stop offset="100%" stop-color="#1a1a2e"/>
+    </linearGradient>
+    <clipPath id="screen-clip">
+      <rect x="60" y="60" width="500" height="510" rx="16"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#port-bg)"/>
+
+  <!-- Screenshot area with photo -->
+  <rect x="56" y="56" width="508" height="518" rx="18" fill="none" stroke="#ffffff10" stroke-width="1"/>
+  <image href="data:image/jpeg;base64,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" x="60" y="60" width="500" height="510" clip-path="url(#screen-clip)" preserveAspectRatio="xMidYMid slice"/>
+  <rect x="60" y="60" width="500" height="510" rx="16" fill="#0a0a0a44"/>
+  <text x="310" y="330" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" fill="#ffffff66">Project Screenshot</text>
+
+  <!-- Right side content -->
+  <!-- Category -->
+  <rect x="620" y="70" width="120" height="26" rx="13" fill="#f59e0b15" stroke="#f59e0b30" stroke-width="1"/>
+  <text x="680" y="88" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="#f59e0b" letter-spacing="0.08em" data-bind="category">CASE STUDY</text>
+
+  <!-- Project name -->
+  <text x="620" y="148" font-family="Inter, sans-serif" font-size="36" font-weight="800" fill="#f8fafc" data-bind="project_name">Project Name</text>
+
+  <!-- Description -->
+  <text x="620" y="185" font-family="Inter, sans-serif" font-size="15" fill="#94a3b8" data-bind="description">Brief project description goes here</text>
+
+  <!-- Metrics row -->
+  <g transform="translate(620, 230)">
+    <rect x="0" y="0" width="150" height="70" rx="10" fill="#ffffff06" stroke="#ffffff08" stroke-width="1"/>
+    <text x="75" y="32" text-anchor="middle" font-family="Inter, sans-serif" font-size="24" font-weight="800" fill="#f59e0b" data-bind="metric_1_value">10M+</text>
+    <text x="75" y="52" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#64748b" letter-spacing="0.08em" data-bind="metric_1_label">USERS</text>
+
+    <rect x="165" y="0" width="150" height="70" rx="10" fill="#ffffff06" stroke="#ffffff08" stroke-width="1"/>
+    <text x="240" y="32" text-anchor="middle" font-family="Inter, sans-serif" font-size="24" font-weight="800" fill="#22c55e" data-bind="metric_2_value">99.9%</text>
+    <text x="240" y="52" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#64748b" letter-spacing="0.08em" data-bind="metric_2_label">UPTIME</text>
+
+    <rect x="330" y="0" width="150" height="70" rx="10" fill="#ffffff06" stroke="#ffffff08" stroke-width="1"/>
+    <text x="405" y="32" text-anchor="middle" font-family="Inter, sans-serif" font-size="24" font-weight="800" fill="#8b5cf6" data-bind="metric_3_value">&lt;50ms</text>
+    <text x="405" y="52" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#64748b" letter-spacing="0.08em" data-bind="metric_3_label">P99 LATENCY</text>
+  </g>
+
+  <!-- Tech stack tags -->
+  <g transform="translate(620, 340)">
+    <rect x="0" y="0" width="60" height="24" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+    <text x="30" y="16" text-anchor="middle" font-family="monospace" font-size="10" fill="#94a3b8" data-bind="tech_1">Rust</text>
+    <rect x="68" y="0" width="75" height="24" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+    <text x="105" y="16" text-anchor="middle" font-family="monospace" font-size="10" fill="#94a3b8" data-bind="tech_2">WASM</text>
+    <rect x="151" y="0" width="95" height="24" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+    <text x="198" y="16" text-anchor="middle" font-family="monospace" font-size="10" fill="#94a3b8" data-bind="tech_3">TypeScript</text>
+  </g>
+
+  <!-- Divider -->
+  <line x1="620" y1="400" x2="1140" y2="400" stroke="#ffffff08" stroke-width="1"/>
+
+  <!-- Author -->
+  <text x="620" y="440" font-family="Inter, sans-serif" font-size="16" font-weight="600" fill="#e2e8f0" data-bind="author">Author Name</text>
+  <text x="620" y="462" font-family="Inter, sans-serif" font-size="12" fill="#64748b" data-bind="role">Role at Company</text>
+
+  <!-- URL -->
+  <text x="620" y="520" font-family="monospace" font-size="12" fill="#f59e0b" data-bind="url">project.example.com</text>
+
+  <!-- Bottom accent -->
+  <rect x="60" y="600" width="1080" height="3" rx="1.5" fill="#f59e0b" opacity="0.3"/>
+</svg>

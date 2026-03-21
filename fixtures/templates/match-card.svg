@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="480" viewBox="0 0 1080 480" data-card-width="1080" data-card-height="480">
+  <defs>
+    <filter id="smoke-bg">
+      <feTurbulence type="turbulence" baseFrequency="0.008 0.004" numOctaves="3" seed="1" result="turb"/>
+      <feDisplacementMap in="SourceGraphic" in2="turb" scale="30" result="disp"/>
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+    <filter id="neon-line">
+      <feGaussianBlur stdDeviation="3" in="SourceGraphic" result="blur"/>
+      <feFlood flood-color="#ffffff" flood-opacity="0.6" result="glow"/>
+      <feComposite in="glow" in2="blur" operator="in" result="softGlow"/>
+      <feMerge>
+        <feMergeNode in="softGlow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="team-a-wash" x1="0%" y1="0%" x2="60%" y2="0%">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3" data-bind-stop="color_a"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="team-b-wash" x1="100%" y1="0%" x2="40%" y2="0%">
+      <stop offset="0%" stop-color="#ef4444" stop-opacity="0.3" data-bind-stop="color_b"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 1. Dark background -->
+  <rect width="1080" height="480" fill="#0a0a0f"/>
+
+  <!-- 2. Smoke overlay -->
+  <rect width="1080" height="480" fill="#1a1a2e" filter="url(#smoke-bg)" opacity="0.5"/>
+
+  <!-- 3. Team A color wash -->
+  <rect width="1080" height="480" fill="url(#team-a-wash)"/>
+
+  <!-- 4. Team B color wash -->
+  <rect width="1080" height="480" fill="url(#team-b-wash)"/>
+
+  <!-- 5. Tournament name -->
+  <text x="540" y="50" text-anchor="middle" font-family="DM Mono, monospace" font-size="10" font-weight="400" fill="#fff" opacity="0.4" letter-spacing="0.2em" data-bind="tournament">VALORANT CHAMPIONS TOUR</text>
+
+  <!-- 6. Stage -->
+  <text x="540" y="80" text-anchor="middle" font-family="Syne, sans-serif" font-size="16" font-weight="700" fill="#fff" opacity="0.8" data-bind="stage">GRAND FINAL</text>
+
+  <!-- 7. Team A logo placeholder -->
+  <circle cx="160" cy="220" r="50" fill="#fff" fill-opacity="0.05" stroke="#fff" stroke-opacity="0.1"/>
+
+  <!-- 8. Team A name -->
+  <text x="380" y="235" text-anchor="end" font-family="Syne, sans-serif" font-size="42" font-weight="800" fill="#fff" data-bind="team_a">CLOUD9</text>
+
+  <!-- 9. Central neon divider -->
+  <line x1="540" y1="120" x2="540" y2="380" stroke="#f59e0b" stroke-width="2" data-bind-attr-stroke="accent" filter="url(#neon-line)"/>
+
+  <!-- 10. VS text -->
+  <text x="540" y="190" text-anchor="middle" font-family="DM Mono, monospace" font-size="12" font-weight="400" fill="#fff" opacity="0.3">VS</text>
+
+  <!-- 11. Score display -->
+  <text x="490" y="280" text-anchor="end" font-family="Space Grotesk, sans-serif" font-size="72" font-weight="700" fill="#fff" data-bind="score_a">3</text>
+  <text x="590" y="280" text-anchor="start" font-family="Space Grotesk, sans-serif" font-size="72" font-weight="700" fill="#fff" data-bind="score_b">1</text>
+
+  <!-- 12. Team B name -->
+  <text x="700" y="235" text-anchor="start" font-family="Syne, sans-serif" font-size="42" font-weight="800" fill="#fff" data-bind="team_b">FNATIC</text>
+
+  <!-- 13. Team B logo placeholder -->
+  <circle cx="920" cy="220" r="50" fill="#fff" fill-opacity="0.05" stroke="#fff" stroke-opacity="0.1"/>
+
+  <!-- 14. Bottom info bar -->
+  <line x1="60" y1="400" x2="1020" y2="400" stroke="#fff" stroke-opacity="0.06"/>
+  <text x="80" y="430" font-family="DM Mono, monospace" font-size="10" font-weight="400" fill="#fff" opacity="0.3" data-bind="game">VALORANT</text>
+  <text x="540" y="430" text-anchor="middle" font-family="DM Mono, monospace" font-size="10" font-weight="400" fill="#fff" opacity="0.3" data-bind="date">MARCH 21, 2026</text>
+  <text x="1000" y="430" text-anchor="end" font-family="DM Mono, monospace" font-size="10" font-weight="400" fill="#fff" opacity="0.3" data-bind="broadcast">TWITCH · YOUTUBE</text>
+
+  <!-- 15. Subtle outer border -->
+  <rect x="4" y="4" width="1072" height="472" rx="4" fill="none" stroke="#fff" stroke-opacity="0.06"/>
+</svg>

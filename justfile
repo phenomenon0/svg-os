@@ -18,3 +18,9 @@ check:
 
 clippy:
     cargo clippy --workspace -- -D warnings
+
+dev-studio:
+    just wasm && cd packages/studio && pnpm dev
+
+build-studio:
+    just wasm && cd packages/studio && pnpm build

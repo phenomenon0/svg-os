@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="480" viewBox="0 0 360 480" data-card-width="360" data-card-height="480">
+  <defs>
+    <!-- Deep dark bg -->
+    <linearGradient id="tm-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a0e"/>
+      <stop offset="100%" stop-color="#07070a"/>
+    </linearGradient>
+    <!-- Accent gradient (customizable per person via data-bind-fill) -->
+    <linearGradient id="tm-accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <!-- Avatar ring gradient -->
+    <linearGradient id="tm-ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="50%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+    <!-- Ambient glow behind avatar -->
+    <radialGradient id="tm-glow" cx="50%" cy="30%" r="30%">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#0a0a0e" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Subtle glass -->
+    <linearGradient id="tm-glass" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.01"/>
+    </linearGradient>
+  </defs>
+
+  <!-- === BACKGROUND === -->
+  <rect width="360" height="480" rx="16" fill="url(#tm-bg)"/>
+  <rect width="360" height="480" rx="16" fill="url(#tm-glow)"/>
+  <rect width="360" height="480" rx="16" fill="url(#tm-glass)"/>
+  <!-- Border -->
+  <rect width="360" height="480" rx="16" fill="none" stroke="#ffffff" stroke-width="0.5" opacity="0.05"/>
+
+  <!-- Top accent bar -->
+  <rect x="0" y="0" width="360" height="3" rx="1.5" fill="url(#tm-ring)" opacity="0.5" clip-path="inset(0 round 16px 16px 0 0)"/>
+
+  <!-- === AVATAR SECTION === -->
+  <!-- Outer decorative ring -->
+  <circle cx="180" cy="130" r="62" fill="none" stroke="url(#tm-ring)" stroke-width="1.5" opacity="0.3"/>
+  <!-- Avatar background circle -->
+  <circle cx="180" cy="130" r="56" fill="#111116"/>
+  <circle cx="180" cy="130" r="56" fill="none" stroke="#1e1e28" stroke-width="1"/>
+  <!-- Placeholder silhouette -->
+  <circle cx="180" cy="118" r="20" fill="#1e1e28"/>
+  <ellipse cx="180" cy="162" rx="28" ry="18" fill="#1e1e28"/>
+
+  <!-- Decorative dots around avatar -->
+  <circle cx="118" cy="80" r="1.5" fill="#6366f1" opacity="0.2"/>
+  <circle cx="242" cy="85" r="1" fill="#a855f7" opacity="0.15"/>
+  <circle cx="108" cy="160" r="1" fill="#ec4899" opacity="0.1"/>
+  <circle cx="252" cy="155" r="1.5" fill="#6366f1" opacity="0.12"/>
+
+  <!-- === NAME + ROLE === -->
+  <text x="180" y="224" text-anchor="middle" font-family="Inter, sans-serif" font-size="22" font-weight="700" fill="#fafafa" letter-spacing="-0.01em" data-bind="name">Jane Smith</text>
+
+  <text x="180" y="248" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#6366f1" letter-spacing="0.1em" data-bind="role">ENGINEERING LEAD</text>
+
+  <!-- Location -->
+  <g transform="translate(180, 274)" opacity="0.4">
+    <!-- Pin icon -->
+    <path d="M-4,-6 C-4,-9 0,-12 0,-12 C0,-12 4,-9 4,-6 C4,-3 0,0 0,0 C0,0 -4,-3 -4,-6 Z" fill="none" stroke="#71717a" stroke-width="1"/>
+    <circle cx="0" cy="-6" r="1.5" fill="#71717a"/>
+    <text x="10" y="-2" font-family="Inter, sans-serif" font-size="11" fill="#52525b" data-bind="location">San Francisco, CA</text>
+  </g>
+
+  <!-- Divider -->
+  <line x1="48" y1="300" x2="312" y2="300" stroke="#1a1a20" stroke-width="1"/>
+
+  <!-- === QUOTE === -->
+  <!-- Opening quote mark -->
+  <text x="48" y="332" font-family="Georgia, serif" font-size="28" fill="#6366f1" opacity="0.3">"</text>
+  <!-- Quote text -->
+  <text x="48" y="344" font-family="Inter, sans-serif" font-size="12" fill="#71717a" font-style="italic" data-bind="quote">Building tools that make</text>
+  <text x="48" y="362" font-family="Inter, sans-serif" font-size="12" fill="#71717a" font-style="italic" data-bind="quote_line2">developers more productive.</text>
+
+  <!-- Divider -->
+  <line x1="48" y1="388" x2="312" y2="388" stroke="#1a1a20" stroke-width="1"/>
+
+  <!-- === SOCIAL LINKS ROW === -->
+  <g transform="translate(0, 412)">
+    <!-- Twitter/X icon -->
+    <g transform="translate(96, 0)" opacity="0.35">
+      <circle cx="16" cy="16" r="16" fill="none" stroke="#e4e4e7" stroke-width="1"/>
+      <path d="M10,10 L17,17 M17,10 L10,17 M22,10 L14,20 M8,22 L16,14" fill="none" stroke="#e4e4e7" stroke-width="1.2" stroke-linecap="round"/>
+    </g>
+    <!-- LinkedIn icon -->
+    <g transform="translate(148, 0)" opacity="0.35">
+      <circle cx="16" cy="16" r="16" fill="none" stroke="#e4e4e7" stroke-width="1"/>
+      <text x="16" y="22" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#e4e4e7">in</text>
+    </g>
+    <!-- GitHub icon -->
+    <g transform="translate(200, 0)" opacity="0.35">
+      <circle cx="16" cy="16" r="16" fill="none" stroke="#e4e4e7" stroke-width="1"/>
+      <circle cx="16" cy="14" r="6" fill="none" stroke="#e4e4e7" stroke-width="1.2"/>
+      <path d="M12,20 C12,17 14,16 16,16 C18,16 20,17 20,20" fill="none" stroke="#e4e4e7" stroke-width="1.2"/>
+    </g>
+    <!-- Website icon -->
+    <g transform="translate(252, 0)" opacity="0.35">
+      <circle cx="16" cy="16" r="16" fill="none" stroke="#e4e4e7" stroke-width="1"/>
+      <circle cx="16" cy="16" r="7" fill="none" stroke="#e4e4e7" stroke-width="1"/>
+      <line x1="16" y1="9" x2="16" y2="23" stroke="#e4e4e7" stroke-width="0.8"/>
+      <line x1="9" y1="16" x2="23" y2="16" stroke="#e4e4e7" stroke-width="0.8"/>
+    </g>
+  </g>
+
+  <!-- === ACCENT COLOR STRIPE (customizable per person) === -->
+  <rect x="0" y="472" width="360" height="8" rx="0 0 16 16" data-bind-fill="accent_color" fill="#6366f1" opacity="0.3"/>
+
+  <!-- Corner accents -->
+  <path d="M2,18 L2,2 L18,2" fill="none" stroke="#6366f1" stroke-width="1" opacity="0.1" data-bind-fill="accent_color"/>
+  <path d="M358,462 L358,478 L342,478" fill="none" stroke="#6366f1" stroke-width="1" opacity="0.1" data-bind-fill="accent_color"/>
+</svg>
