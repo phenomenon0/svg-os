@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SVG OS Editor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      height: 48px;
+    }
+
+    header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #94a3b8;
+      letter-spacing: 0.05em;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 4px;
+    }
+
+    .toolbar button {
+      padding: 6px 12px;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      background: #1e293b;
+      color: #cbd5e1;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .toolbar button:hover {
+      background: #334155;
+    }
+
+    .toolbar button.active {
+      background: #2563eb;
+      border-color: #3b82f6;
+      color: #fff;
+    }
+
+    .toolbar button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    #canvas-container {
+      flex: 1;
+      background: #1a1a2e;
+      background-image:
+        radial-gradient(circle, #ffffff08 1px, transparent 1px);
+      background-size: 20px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #canvas-container svg {
+      background: #ffffff;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    #properties {
+      width: 280px;
+      background: #1e293b;
+      border-left: 1px solid #334155;
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    #properties h2 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      margin-bottom: 12px;
+    }
+
+    .prop-group {
+      margin-bottom: 16px;
+    }
+
+    .prop-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .prop-row label {
+      font-size: 11px;
+      color: #94a3b8;
+      width: 50px;
+      flex-shrink: 0;
+    }
+
+    .prop-row input {
+      flex: 1;
+      padding: 4px 8px;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 12px;
+    }
+
+    .prop-row input[type="color"] {
+      width: 32px;
+      height: 24px;
+      padding: 0;
+      border: none;
+      cursor: pointer;
+    }
+
+    #status {
+      padding: 4px 16px;
+      background: #1e293b;
+      border-top: 1px solid #334155;
+      font-size: 11px;
+      color: #64748b;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SVG OS</h1>
+    <div class="toolbar">
+      <button id="tool-select" class="active" title="Select (V)">Select</button>
+      <button id="tool-rect" title="Rectangle (R)">Rect</button>
+      <button id="tool-ellipse" title="Ellipse (E)">Ellipse</button>
+      <button id="tool-path" title="Path (P)">Path</button>
+      <span style="width:1px;background:#334155;margin:0 4px"></span>
+      <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
+      <button id="btn-redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+      <span style="width:1px;background:#334155;margin:0 4px"></span>
+      <button id="btn-export" title="Export SVG">Export</button>
+      <button id="btn-import" title="Import SVG">Import</button>
+    </div>
+  </header>
+  <main>
+    <div id="canvas-container"></div>
+    <div id="properties">
+      <h2>Properties</h2>
+      <div id="prop-content">
+        <p style="font-size:12px;color:#475569">Select a shape to edit properties</p>
+      </div>
+    </div>
+  </main>
+  <div id="status">
+    <span id="status-text">Loading WASM...</span>
+    <span id="status-nodes"></span>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+[package]
+name = "svg-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+svg-geom.workspace = true
+svg-doc.workspace = true
+svg-render.workspace = true
+svg-text.workspace = true
+svg-effects.workspace = true
+svg-layout.workspace = true
+svg-runtime.workspace = true
+forge-math.workspace = true
+forge-core.workspace = true
+wasm-bindgen.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+uuid.workspace = true

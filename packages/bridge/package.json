@@ -1,0 +1,15 @@
+{
+  "name": "@svg-os/bridge",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "wasm"],
+  "scripts": {
+    "build": "tsc",
+    "test": "echo 'bridge tests: TODO'"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

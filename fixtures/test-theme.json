@@ -1,0 +1,24 @@
+{
+  "name": "dark",
+  "colors": {
+    "primary": "#818cf8",
+    "secondary": "#a78bfa",
+    "background": "#1e1e2e",
+    "foreground": "#cdd6f4",
+    "accent": "#f9e2af",
+    "error": "#f38ba8",
+    "success": "#a6e3a1"
+  },
+  "fonts": {
+    "heading": "Inter, system-ui, sans-serif",
+    "body": "Inter, system-ui, sans-serif",
+    "mono": "JetBrains Mono, monospace"
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "xl": 32
+  }
+}

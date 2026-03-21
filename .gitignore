@@ -1,0 +1,7 @@
+/target
+node_modules/
+packages/bridge/wasm/
+dist/
+*.swp
+*.swo
+.DS_Store

@@ -1,0 +1,14 @@
+[package]
+name = "svg-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+svg-doc.workspace = true
+svg-layout.workspace = true
+svg-effects.workspace = true
+forge-math.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true

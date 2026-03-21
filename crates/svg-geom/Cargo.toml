@@ -1,0 +1,10 @@
+[package]
+name = "svg-geom"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kurbo.workspace = true
+forge-math.workspace = true
+serde.workspace = true

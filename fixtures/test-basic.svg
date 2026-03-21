@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <rect x="20" y="20" width="160" height="100" fill="url(#grad1)" rx="8"/>
+  <circle cx="300" cy="70" r="40" fill="#ef4444" stroke="#991b1b" stroke-width="2"/>
+  <g id="label-group" transform="translate(20, 150)">
+    <rect x="0" y="0" width="360" height="40" fill="#1e293b" rx="4"/>
+    <text x="180" y="26" font-family="Inter, sans-serif" font-size="14" fill="white" text-anchor="middle">SVG OS Test Fixture</text>
+  </g>
+  <path d="M20,220 C100,180 300,260 380,220" fill="none" stroke="#22c55e" stroke-width="3"/>
+</svg>

@@ -1,0 +1,56 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/svg-geom",
+    "crates/svg-doc",
+    "crates/svg-render",
+    "crates/svg-text",
+    "crates/svg-effects",
+    "crates/svg-layout",
+    "crates/svg-runtime",
+    "crates/svg-wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+# Internal crates
+svg-geom = { path = "crates/svg-geom" }
+svg-doc = { path = "crates/svg-doc" }
+svg-render = { path = "crates/svg-render" }
+svg-text = { path = "crates/svg-text" }
+svg-effects = { path = "crates/svg-effects" }
+svg-layout = { path = "crates/svg-layout" }
+svg-runtime = { path = "crates/svg-runtime" }
+
+# Forge dependencies (local path — switch to git once repo is public)
+forge-math = { path = "../forge/crates/forge-math" }
+forge-core = { path = "../forge/crates/forge-core" }
+
+# Geometry
+kurbo = "0.11"
+
+# SVG / XML
+quick-xml = { version = "0.36", features = ["serialize"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging
+log = "0.4"
+
+# IDs
+uuid = { version = "1", features = ["v4", "serde", "js"] }
+
+# WASM
+wasm-bindgen = "0.2"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

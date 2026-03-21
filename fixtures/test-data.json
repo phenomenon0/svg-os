@@ -1,0 +1,6 @@
+[
+  { "name": "Alice", "score": 95, "color": "#3b82f6" },
+  { "name": "Bob", "score": 82, "color": "#ef4444" },
+  { "name": "Carol", "score": 91, "color": "#22c55e" },
+  { "name": "Dave", "score": 78, "color": "#f59e0b" }
+]
