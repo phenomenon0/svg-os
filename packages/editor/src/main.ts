@@ -1,12 +1,11 @@
 /**
  * SVG OS Editor — Minimal MVP canvas.
  *
- * Proof-of-life editor that wires up all WASM layers:
- * - Create shapes via toolbar tools
- * - Select + drag to move (batched undo)
- * - Property panel for fill/stroke/dimensions (shape-aware)
- * - Undo/redo
- * - Export/import SVG
+ * - Shape tools (rect, ellipse, path) + select/drag/move
+ * - Property panel (shape-aware)
+ * - Data binding panel (load JSON, bind fields to attrs, repeat templates)
+ * - Theme switcher
+ * - Undo/redo, export/import
  */
 
 import {
@@ -15,7 +14,9 @@ import {
   undo, redo, canUndo, canRedo,
   getRenderOps, getFullRenderOps, applyOps, resetElementMap,
   importSvg, exportSvg, getElement,
+  bind, evaluateBindings, applyTheme, repeatTemplate,
 } from "@svg-os/bridge";
+import type { Binding, Theme } from "@svg-os/bridge";
 
 // ── State ───────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,8 @@ let selectedNodeId: string | null = null;
 let isDragging = false;
 let dragStart = { x: 0, y: 0 };
 let dragNodeStart = { x: 0, y: 0 };
+let loadedData: unknown = null;
+let activeBindings: Array<{ nodeId: string; field: string; attr: string }> = [];
 
 const container = document.getElementById("canvas-container")!;
 const statusText = document.getElementById("status-text")!;
@@ -42,6 +45,8 @@ async function init() {
     setupTools();
     setupKeyboard();
     setupCanvasEvents();
+    setupPanelTabs();
+    setupDataPanel();
     updateUndoRedoButtons();
   } catch (e) {
     statusText.textContent = `Failed to load WASM: ${e}`;
@@ -79,6 +84,21 @@ function updateUndoRedoButtons() {
   (document.getElementById("btn-redo") as HTMLButtonElement).disabled = !canRedo();
 }
 
+// ── Panel Tabs ──────────────────────────────────────────────────────────────
+
+function setupPanelTabs() {
+  document.querySelectorAll(".panel-tabs button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = (btn as HTMLElement).dataset.tab;
+      document.querySelectorAll(".panel-tabs button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.querySelectorAll(".panel-content").forEach((p) => {
+        (p as HTMLElement).hidden = p.id !== `tab-${tab}`;
+      });
+    });
+  });
+}
+
 // ── Tools ───────────────────────────────────────────────────────────────────
 
 function setupTools() {
@@ -97,15 +117,8 @@ function setupTools() {
     });
   }
 
-  document.getElementById("btn-undo")!.addEventListener("click", () => {
-    undo();
-    fullRerender();
-  });
-
-  document.getElementById("btn-redo")!.addEventListener("click", () => {
-    redo();
-    fullRerender();
-  });
+  document.getElementById("btn-undo")!.addEventListener("click", () => { undo(); fullRerender(); });
+  document.getElementById("btn-redo")!.addEventListener("click", () => { redo(); fullRerender(); });
 
   document.getElementById("btn-export")!.addEventListener("click", () => {
     const svg = exportSvg();
@@ -125,12 +138,42 @@ function setupTools() {
     input.addEventListener("change", async () => {
       const file = input.files?.[0];
       if (file) {
-        const text = await file.text();
-        importSvg(text);
+        importSvg(await file.text());
         fullRerender();
       }
     });
     input.click();
+  });
+
+  // Theme button — cycles through built-in themes
+  let themeIndex = 0;
+  const themes: Theme[] = [
+    {
+      name: "default",
+      colors: { primary: "#2563eb", secondary: "#64748b", background: "#ffffff", foreground: "#0f172a", accent: "#f59e0b" },
+      fonts: { heading: "Inter, system-ui, sans-serif", body: "Inter, system-ui, sans-serif" },
+      spacing: { sm: 8, md: 16, lg: 24 },
+    },
+    {
+      name: "catppuccin",
+      colors: { primary: "#89b4fa", secondary: "#a6adc8", background: "#1e1e2e", foreground: "#cdd6f4", accent: "#f9e2af" },
+      fonts: { heading: "Inter, system-ui, sans-serif", body: "Inter, system-ui, sans-serif" },
+      spacing: { sm: 8, md: 16, lg: 24 },
+    },
+    {
+      name: "warm",
+      colors: { primary: "#ea580c", secondary: "#78716c", background: "#fef3c7", foreground: "#292524", accent: "#dc2626" },
+      fonts: { heading: "Georgia, serif", body: "Inter, system-ui, sans-serif" },
+      spacing: { sm: 8, md: 16, lg: 24 },
+    },
+  ];
+
+  document.getElementById("btn-theme")!.addEventListener("click", () => {
+    themeIndex = (themeIndex + 1) % themes.length;
+    const theme = themes[themeIndex];
+    applyTheme(theme);
+    fullRerender();
+    statusText.textContent = `Theme: ${theme.name}`;
   });
 }
 
@@ -138,8 +181,7 @@ function setupTools() {
 
 function setupKeyboard() {
   document.addEventListener("keydown", (e) => {
-    // Don't intercept when typing in inputs
-    if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+    if ((e.target as HTMLElement)?.tagName === "INPUT" || (e.target as HTMLElement)?.tagName === "TEXTAREA") return;
 
     if (!e.ctrlKey && !e.metaKey) {
       switch (e.key.toLowerCase()) {
@@ -147,34 +189,15 @@ function setupKeyboard() {
         case "r": setTool("rect"); return;
         case "e": setTool("ellipse"); return;
         case "p": setTool("path"); return;
-        case "delete":
-        case "backspace":
-          if (selectedNodeId) {
-            removeNode(selectedNodeId);
-            selectedNodeId = null;
-            fullRerender();
-          }
+        case "delete": case "backspace":
+          if (selectedNodeId) { removeNode(selectedNodeId); selectedNodeId = null; fullRerender(); }
           return;
       }
     }
 
-    // Undo/Redo
-    if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
-      e.preventDefault();
-      undo();
-      fullRerender();
-    }
-    if ((e.ctrlKey || e.metaKey) && (e.key === "Z" || (e.key === "z" && e.shiftKey))) {
-      e.preventDefault();
-      redo();
-      fullRerender();
-    }
-    // Also support Ctrl+Y for redo
-    if ((e.ctrlKey || e.metaKey) && e.key === "y") {
-      e.preventDefault();
-      redo();
-      fullRerender();
-    }
+    if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) { e.preventDefault(); undo(); fullRerender(); }
+    if ((e.ctrlKey || e.metaKey) && (e.key === "Z" || (e.key === "z" && e.shiftKey))) { e.preventDefault(); redo(); fullRerender(); }
+    if ((e.ctrlKey || e.metaKey) && e.key === "y") { e.preventDefault(); redo(); fullRerender(); }
   });
 }
 
@@ -198,19 +221,15 @@ function getSvgPoint(e: PointerEvent): { x: number; y: number } {
   const rect = svg.getBoundingClientRect();
   const viewBox = svg.viewBox.baseVal;
   if (!viewBox || viewBox.width === 0) return { x: e.offsetX, y: e.offsetY };
-  const scaleX = viewBox.width / rect.width;
-  const scaleY = viewBox.height / rect.height;
   return {
-    x: (e.clientX - rect.left) * scaleX + viewBox.x,
-    y: (e.clientY - rect.top) * scaleY + viewBox.y,
+    x: (e.clientX - rect.left) * (viewBox.width / rect.width) + viewBox.x,
+    y: (e.clientY - rect.top) * (viewBox.height / rect.height) + viewBox.y,
   };
 }
 
-/** Get the position attribute keys for a given element type. */
-function posKeys(el: Element): { x: string; y: string } {
+function posKeys(el: Element) {
   const tag = el.tagName.toLowerCase();
-  if (tag === "circle" || tag === "ellipse") return { x: "cx", y: "cy" };
-  return { x: "x", y: "y" };
+  return (tag === "circle" || tag === "ellipse") ? { x: "cx", y: "cy" } : { x: "x", y: "y" };
 }
 
 function onPointerDown(e: PointerEvent) {
@@ -219,63 +238,42 @@ function onPointerDown(e: PointerEvent) {
   if (currentTool === "select") {
     const target = e.target as Element;
     const nodeId = target?.getAttribute?.("data-node-id");
-
-    // Don't select the root <svg> or <defs>
-    if (nodeId && target.tagName !== "svg" && target.tagName !== "defs") {
+    if (nodeId && target.tagName !== "svg" && target.tagName !== "defs" && !target.hasAttribute("data-selection")) {
       selectNode(nodeId);
       isDragging = true;
-      dragStart = { x: pt.x, y: pt.y };
-
+      dragStart = pt;
       const keys = posKeys(target);
-      const xAttr = target.getAttribute(keys.x) || "0";
-      const yAttr = target.getAttribute(keys.y) || "0";
-      dragNodeStart = { x: parseFloat(xAttr), y: parseFloat(yAttr) };
+      dragNodeStart = {
+        x: parseFloat(target.getAttribute(keys.x) || "0"),
+        y: parseFloat(target.getAttribute(keys.y) || "0"),
+      };
       container.setPointerCapture(e.pointerId);
     } else {
       deselectNode();
     }
   } else {
-    // Shape creation tools
     const root = rootId();
-    const size = 80;
+    const s = 80;
+    let id: string | undefined;
 
     if (currentTool === "rect") {
-      const id = createNode(root, "rect", {
-        x: String(Math.round(pt.x - size / 2)),
-        y: String(Math.round(pt.y - size / 2)),
-        width: String(size),
-        height: String(size),
-        fill: "#3b82f6",
-        stroke: "#1d4ed8",
-        "stroke-width": "2",
-        rx: "4",
+      id = createNode(root, "rect", {
+        x: String(Math.round(pt.x - s/2)), y: String(Math.round(pt.y - s/2)),
+        width: String(s), height: String(s), fill: "#3b82f6", stroke: "#1d4ed8", "stroke-width": "2", rx: "4",
       });
-      render();
-      selectNode(id);
     } else if (currentTool === "ellipse") {
-      const id = createNode(root, "ellipse", {
-        cx: String(Math.round(pt.x)),
-        cy: String(Math.round(pt.y)),
-        rx: String(size / 2),
-        ry: String(size / 3),
-        fill: "#8b5cf6",
-        stroke: "#6d28d9",
-        "stroke-width": "2",
+      id = createNode(root, "ellipse", {
+        cx: String(Math.round(pt.x)), cy: String(Math.round(pt.y)),
+        rx: String(s/2), ry: String(s/3), fill: "#8b5cf6", stroke: "#6d28d9", "stroke-width": "2",
       });
-      render();
-      selectNode(id);
     } else if (currentTool === "path") {
-      const d = `M${Math.round(pt.x)},${Math.round(pt.y)} l60,-30 l0,60 Z`;
-      const id = createNode(root, "path", {
-        d,
-        fill: "#f59e0b",
-        stroke: "#d97706",
-        "stroke-width": "2",
+      id = createNode(root, "path", {
+        d: `M${Math.round(pt.x)},${Math.round(pt.y)} l60,-30 l0,60 Z`,
+        fill: "#f59e0b", stroke: "#d97706", "stroke-width": "2",
       });
-      render();
-      selectNode(id);
     }
 
+    if (id) { render(); selectNode(id); }
     setTool("select");
   }
 }
@@ -283,33 +281,21 @@ function onPointerDown(e: PointerEvent) {
 function onPointerMove(e: PointerEvent) {
   if (!isDragging || !selectedNodeId) return;
   const pt = getSvgPoint(e);
-  const dx = pt.x - dragStart.x;
-  const dy = pt.y - dragStart.y;
-
   const el = getElement(selectedNodeId);
   if (!el) return;
 
   const keys = posKeys(el);
-  const newX = String(Math.round(dragNodeStart.x + dx));
-  const newY = String(Math.round(dragNodeStart.y + dy));
-
-  // Live preview via direct DOM (committed on pointerup)
-  el.setAttribute(keys.x, newX);
-  el.setAttribute(keys.y, newY);
-
-  // Update selection overlay position
+  el.setAttribute(keys.x, String(Math.round(dragNodeStart.x + pt.x - dragStart.x)));
+  el.setAttribute(keys.y, String(Math.round(dragNodeStart.y + pt.y - dragStart.y)));
   updateSelectionOverlay();
 }
 
 function onPointerUp(e: PointerEvent) {
   if (!isDragging || !selectedNodeId) return;
-
   const pt = getSvgPoint(e);
-  const dx = pt.x - dragStart.x;
-  const dy = pt.y - dragStart.y;
+  const dx = pt.x - dragStart.x, dy = pt.y - dragStart.y;
 
   if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-    // Commit move as a single undoable batch
     const el = getElement(selectedNodeId);
     if (el) {
       const keys = posKeys(el);
@@ -336,12 +322,14 @@ function selectNode(id: string) {
   selectedNodeId = id;
   updateSelectionOverlay();
   showPropsFor(id);
+  updateBindingForm();
 }
 
 function deselectNode() {
   removeSelectionOverlay();
   selectedNodeId = null;
   showEmptyProps();
+  updateBindingForm();
 }
 
 function updateSelectionOverlay() {
@@ -349,7 +337,6 @@ function updateSelectionOverlay() {
   const el = getElement(selectedNodeId);
   const svg = container.querySelector("svg");
   if (!el || !svg) return;
-
   const bbox = (el as SVGGraphicsElement).getBBox?.();
   if (!bbox) return;
 
@@ -373,10 +360,8 @@ function updateSelectionOverlay() {
 }
 
 function removeSelectionOverlay() {
-  if (selectionOverlay) {
-    selectionOverlay.remove();
-    selectionOverlay = null;
-  }
+  selectionOverlay?.remove();
+  selectionOverlay = null;
 }
 
 // ── Properties Panel ────────────────────────────────────────────────────────
@@ -393,89 +378,41 @@ function showPropsFor(id: string) {
   const fill = el.getAttribute("fill") || "#000000";
   const stroke = el.getAttribute("stroke") || "none";
   const strokeWidth = el.getAttribute("stroke-width") || "1";
-
-  // Fill color value safe for color input (must be #rrggbb)
   const fillColor = fill.startsWith("#") && fill.length >= 7 ? fill.slice(0, 7) : "#000000";
   const strokeColor = stroke.startsWith("#") && stroke.length >= 7 ? stroke.slice(0, 7) : "#000000";
 
-  let positionHtml = "";
-  let sizeHtml = "";
+  let posHtml = "", sizeHtml = "";
 
   if (tag === "circle") {
-    const cx = el.getAttribute("cx") || "0";
-    const cy = el.getAttribute("cy") || "0";
-    const r = el.getAttribute("r") || "0";
-    positionHtml = `
-      <div class="prop-row"><label>CX</label><input type="number" data-attr="cx" value="${cx}"></div>
-      <div class="prop-row"><label>CY</label><input type="number" data-attr="cy" value="${cy}"></div>`;
-    sizeHtml = `
-      <div class="prop-row"><label>R</label><input type="number" data-attr="r" value="${r}"></div>`;
+    posHtml = row("CX", "cx", el) + row("CY", "cy", el);
+    sizeHtml = row("R", "r", el);
   } else if (tag === "ellipse") {
-    const cx = el.getAttribute("cx") || "0";
-    const cy = el.getAttribute("cy") || "0";
-    const rx = el.getAttribute("rx") || "0";
-    const ry = el.getAttribute("ry") || "0";
-    positionHtml = `
-      <div class="prop-row"><label>CX</label><input type="number" data-attr="cx" value="${cx}"></div>
-      <div class="prop-row"><label>CY</label><input type="number" data-attr="cy" value="${cy}"></div>`;
-    sizeHtml = `
-      <div class="prop-row"><label>RX</label><input type="number" data-attr="rx" value="${rx}"></div>
-      <div class="prop-row"><label>RY</label><input type="number" data-attr="ry" value="${ry}"></div>`;
+    posHtml = row("CX", "cx", el) + row("CY", "cy", el);
+    sizeHtml = row("RX", "rx", el) + row("RY", "ry", el);
   } else if (tag === "path") {
-    // Paths don't have x/y — show the bounding box info read-only
-    const bbox = (el as SVGGraphicsElement).getBBox?.();
-    if (bbox) {
-      positionHtml = `
-        <div class="prop-row"><label>X</label><input type="number" value="${Math.round(bbox.x)}" disabled></div>
-        <div class="prop-row"><label>Y</label><input type="number" value="${Math.round(bbox.y)}" disabled></div>`;
-      sizeHtml = `
-        <div class="prop-row"><label>W</label><input type="number" value="${Math.round(bbox.width)}" disabled></div>
-        <div class="prop-row"><label>H</label><input type="number" value="${Math.round(bbox.height)}" disabled></div>`;
-    }
+    const b = (el as SVGGraphicsElement).getBBox?.();
+    posHtml = rowRO("X", b?.x) + rowRO("Y", b?.y);
+    sizeHtml = rowRO("W", b?.width) + rowRO("H", b?.height);
   } else if (tag === "text") {
-    const x = el.getAttribute("x") || "0";
-    const y = el.getAttribute("y") || "0";
-    const fontSize = el.getAttribute("font-size") || "16";
-    positionHtml = `
-      <div class="prop-row"><label>X</label><input type="number" data-attr="x" value="${x}"></div>
-      <div class="prop-row"><label>Y</label><input type="number" data-attr="y" value="${y}"></div>`;
-    sizeHtml = `
-      <div class="prop-row"><label>Size</label><input type="number" data-attr="font-size" value="${fontSize}"></div>`;
+    posHtml = row("X", "x", el) + row("Y", "y", el);
+    sizeHtml = row("Size", "font-size", el);
   } else {
-    // rect, line, etc.
-    const x = el.getAttribute("x") || "0";
-    const y = el.getAttribute("y") || "0";
-    const w = el.getAttribute("width") || "0";
-    const h = el.getAttribute("height") || "0";
-    positionHtml = `
-      <div class="prop-row"><label>X</label><input type="number" data-attr="x" value="${x}"></div>
-      <div class="prop-row"><label>Y</label><input type="number" data-attr="y" value="${y}"></div>`;
-    sizeHtml = `
-      <div class="prop-row"><label>W</label><input type="number" data-attr="width" value="${w}"></div>
-      <div class="prop-row"><label>H</label><input type="number" data-attr="height" value="${h}"></div>`;
+    posHtml = row("X", "x", el) + row("Y", "y", el);
+    sizeHtml = row("W", "width", el) + row("H", "height", el);
   }
 
   propContent.innerHTML = `
-    <div class="prop-group">
-      <h2>${tag.toUpperCase()}</h2>
-    </div>
-    <div class="prop-group">
-      <h2>Position</h2>
-      ${positionHtml}
-    </div>
-    <div class="prop-group">
-      <h2>Size</h2>
-      ${sizeHtml}
-    </div>
-    <div class="prop-group">
-      <h2>Fill & Stroke</h2>
+    <div class="prop-group"><h2>${tag.toUpperCase()}</h2></div>
+    <div class="prop-group"><h2>Position</h2>${posHtml}</div>
+    <div class="prop-group"><h2>Size</h2>${sizeHtml}</div>
+    <div class="prop-group"><h2>Fill & Stroke</h2>
       <div class="prop-row"><label>Fill</label><input type="color" data-attr="fill" value="${fillColor}"><input type="text" data-attr="fill" value="${fill}" style="flex:1"></div>
       <div class="prop-row"><label>Stroke</label><input type="color" data-attr="stroke" value="${strokeColor}"><input type="text" data-attr="stroke" value="${stroke}" style="flex:1"></div>
       <div class="prop-row"><label>Width</label><input type="number" data-attr="stroke-width" value="${strokeWidth}" step="0.5" min="0"></div>
     </div>
+    <div class="prop-group" style="font-size:10px;color:#475569;word-break:break-all">ID: ${id.slice(0, 8)}...</div>
   `;
 
-  // Wire up change events
   propContent.querySelectorAll("input:not([disabled])").forEach((input) => {
     const inp = input as HTMLInputElement;
     inp.addEventListener("change", () => {
@@ -485,13 +422,149 @@ function showPropsFor(id: string) {
         render();
         updateSelectionOverlay();
         updateUndoRedoButtons();
-        // Sync paired color picker + text field
-        propContent.querySelectorAll(`input[data-attr="${attr}"]`).forEach((sibling) => {
-          if (sibling !== inp) (sibling as HTMLInputElement).value = inp.value;
+        propContent.querySelectorAll(`input[data-attr="${attr}"]`).forEach((s) => {
+          if (s !== inp) (s as HTMLInputElement).value = inp.value;
         });
       }
     });
   });
+}
+
+function row(label: string, attr: string, el: Element): string {
+  const val = el.getAttribute(attr) || "0";
+  return `<div class="prop-row"><label>${label}</label><input type="number" data-attr="${attr}" value="${val}"></div>`;
+}
+
+function rowRO(label: string, val?: number): string {
+  return `<div class="prop-row"><label>${label}</label><input type="number" value="${Math.round(val ?? 0)}" disabled></div>`;
+}
+
+// ── Data Binding Panel ──────────────────────────────────────────────────────
+
+function setupDataPanel() {
+  const preview = document.getElementById("data-preview")!;
+
+  // Load JSON file
+  document.getElementById("btn-load-json")!.addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      if (file) {
+        try {
+          loadedData = JSON.parse(await file.text());
+          preview.textContent = JSON.stringify(loadedData, null, 2).slice(0, 500);
+          statusText.textContent = `Loaded: ${file.name}`;
+        } catch { statusText.textContent = "Invalid JSON"; }
+      }
+    });
+    input.click();
+  });
+
+  // Load CSV (simple parser)
+  document.getElementById("btn-load-csv")!.addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv";
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      if (file) {
+        const text = await file.text();
+        const lines = text.trim().split("\n");
+        const headers = lines[0].split(",").map((h) => h.trim());
+        const rows = lines.slice(1).map((line) => {
+          const vals = line.split(",").map((v) => v.trim());
+          const obj: Record<string, string> = {};
+          headers.forEach((h, i) => { obj[h] = vals[i] || ""; });
+          return obj;
+        });
+        loadedData = rows;
+        preview.textContent = JSON.stringify(rows, null, 2).slice(0, 500);
+        statusText.textContent = `Loaded: ${file.name} (${rows.length} rows)`;
+      }
+    });
+    input.click();
+  });
+
+  // Sample data
+  document.getElementById("btn-sample-data")!.addEventListener("click", () => {
+    loadedData = [
+      { name: "Alice", score: 95, color: "#3b82f6" },
+      { name: "Bob", score: 82, color: "#ef4444" },
+      { name: "Carol", score: 91, color: "#22c55e" },
+      { name: "Dave", score: 78, color: "#f59e0b" },
+    ];
+    preview.textContent = JSON.stringify(loadedData, null, 2);
+    statusText.textContent = "Loaded sample data (4 rows)";
+  });
+
+  // Add binding
+  document.getElementById("btn-add-binding")!.addEventListener("click", () => {
+    if (!selectedNodeId || !loadedData) return;
+    const field = (document.getElementById("bind-field") as HTMLInputElement).value.trim();
+    const attr = (document.getElementById("bind-attr") as HTMLSelectElement).value;
+    if (!field) return;
+
+    const binding: Binding = {
+      source: { Static: { value: Array.isArray(loadedData) ? (loadedData as unknown[])[0] : loadedData } },
+      target: selectedNodeId,
+      mappings: [{ field, attr, transform: undefined }],
+    };
+
+    bind(binding);
+    activeBindings.push({ nodeId: selectedNodeId, field, attr });
+
+    // Evaluate immediately
+    const data = Array.isArray(loadedData) ? (loadedData as unknown[])[0] : loadedData;
+    evaluateBindings(JSON.stringify({ _static: data }));
+    render();
+    updateSelectionOverlay();
+    renderBindingsList();
+    statusText.textContent = `Bound ${field} → ${attr}`;
+
+    (document.getElementById("bind-field") as HTMLInputElement).value = "";
+  });
+
+  // Repeat template
+  document.getElementById("btn-repeat")!.addEventListener("click", () => {
+    if (!selectedNodeId || !loadedData || !Array.isArray(loadedData)) {
+      statusText.textContent = "Select a node and load array data first";
+      return;
+    }
+    const cols = parseInt((document.getElementById("repeat-cols") as HTMLInputElement).value) || 3;
+    const gap = parseInt((document.getElementById("repeat-gap") as HTMLInputElement).value) || 10;
+
+    const ids = repeatTemplate(selectedNodeId, loadedData as Record<string, unknown>[], cols, gap, gap);
+    fullRerender();
+    statusText.textContent = `Repeated template: ${ids.length} instances`;
+  });
+}
+
+function updateBindingForm() {
+  const form = document.getElementById("binding-form")!;
+  form.style.display = (selectedNodeId && loadedData) ? "block" : "none";
+  renderBindingsList();
+}
+
+function renderBindingsList() {
+  const list = document.getElementById("bindings-list")!;
+  const nodeBindings = selectedNodeId
+    ? activeBindings.filter((b) => b.nodeId === selectedNodeId)
+    : [];
+
+  if (nodeBindings.length === 0) {
+    list.innerHTML = '<p style="font-size:11px;color:#475569">No bindings on this node</p>';
+    return;
+  }
+
+  list.innerHTML = nodeBindings.map((b) => `
+    <div class="binding-item">
+      <span class="field">${b.field}</span>
+      <span class="arrow">&rarr;</span>
+      <span class="attr">${b.attr}</span>
+    </div>
+  `).join("");
 }
 
 // ── Start ───────────────────────────────────────────────────────────────────
