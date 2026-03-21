@@ -219,6 +219,45 @@ pub fn svg_os_reparent(id: &str, new_parent: &str, index: u32) -> std::result::R
     })
 }
 
+/// Set multiple attributes on a node as a single undoable batch.
+/// attrs_json is an object like {"x": "10", "y": "20"}
+#[wasm_bindgen]
+pub fn svg_os_set_attrs_batch(id: &str, attrs_json: &str) -> std::result::Result<(), JsValue> {
+    with_engine(|e| {
+        let node_id = NodeId::from_str(id)
+            .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
+
+        let attrs: serde_json::Value = serde_json::from_str(attrs_json)
+            .map_err(|err| JsValue::from_str(&format!("Invalid JSON: {}", err)))?;
+
+        let mut commands = Vec::new();
+        if let serde_json::Value::Object(map) = attrs {
+            for (key, value) in map {
+                let attr_key = AttrKey::from_name(&key);
+                let attr_str = match &value {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    other => other.to_string(),
+                };
+                let attr_value = AttrValue::parse(&attr_key, &attr_str);
+                commands.push(svg_doc::SvgCommand::SetAttr {
+                    id: node_id,
+                    key: attr_key,
+                    value: attr_value,
+                    old_value: None,
+                });
+            }
+        }
+
+        let batch = svg_doc::SvgCommand::Batch { commands };
+        let inverse = batch.execute(&mut e.doc);
+        e.undo_stack.push(inverse);
+        e.redo_stack.clear();
+
+        Ok(())
+    })
+}
+
 /// Undo the last command.
 #[wasm_bindgen]
 pub fn svg_os_undo() -> bool {

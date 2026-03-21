@@ -14,7 +14,7 @@ export type { SvgOsWasm } from "./wasm-loader.js";
 
 export {
   importSvg, exportSvg, rootId, defsId,
-  createNode, removeNode, setAttr, removeAttr, reparent,
+  createNode, removeNode, setAttr, setAttrsBatch, removeAttr, reparent,
   undo, redo, canUndo, canRedo,
   getRenderOps, getFullRenderOps, getDocumentJson,
   addEffect, removeEffect,

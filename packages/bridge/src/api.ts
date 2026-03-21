@@ -58,6 +58,11 @@ export function reparent(id: NodeId, newParent: NodeId, index: number): void {
   getWasm().svg_os_reparent(id, newParent, index);
 }
 
+/** Set multiple attributes as a single undoable batch. */
+export function setAttrsBatch(id: NodeId, attrs: Record<string, string>): void {
+  getWasm().svg_os_set_attrs_batch(id, JSON.stringify(attrs));
+}
+
 // ── Undo / Redo ─────────────────────────────────────────────────────────────
 
 export function undo(): boolean { return getWasm().svg_os_undo(); }

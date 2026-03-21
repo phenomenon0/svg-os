@@ -3,15 +3,15 @@
  *
  * Proof-of-life editor that wires up all WASM layers:
  * - Create shapes via toolbar tools
- * - Select + drag to move
- * - Property panel for fill/stroke/dimensions
+ * - Select + drag to move (batched undo)
+ * - Property panel for fill/stroke/dimensions (shape-aware)
  * - Undo/redo
  * - Export/import SVG
  */
 
 import {
   loadWasm,
-  rootId, createNode, removeNode, setAttr,
+  rootId, createNode, removeNode, setAttr, setAttrsBatch,
   undo, redo, canUndo, canRedo,
   getRenderOps, getFullRenderOps, applyOps, resetElementMap,
   importSvg, exportSvg, getElement,
@@ -58,7 +58,6 @@ function render() {
 }
 
 function fullRerender() {
-  // Clear DOM and re-render from scratch using full render (not diff)
   container.innerHTML = "";
   resetElementMap();
   const ops = getFullRenderOps();
@@ -139,7 +138,9 @@ function setupTools() {
 
 function setupKeyboard() {
   document.addEventListener("keydown", (e) => {
-    // Tool shortcuts
+    // Don't intercept when typing in inputs
+    if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+
     if (!e.ctrlKey && !e.metaKey) {
       switch (e.key.toLowerCase()) {
         case "v": setTool("select"); return;
@@ -152,7 +153,6 @@ function setupKeyboard() {
             removeNode(selectedNodeId);
             selectedNodeId = null;
             fullRerender();
-            showEmptyProps();
           }
           return;
       }
@@ -164,7 +164,13 @@ function setupKeyboard() {
       undo();
       fullRerender();
     }
-    if ((e.ctrlKey || e.metaKey) && e.key === "z" && e.shiftKey) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === "Z" || (e.key === "z" && e.shiftKey))) {
+      e.preventDefault();
+      redo();
+      fullRerender();
+    }
+    // Also support Ctrl+Y for redo
+    if ((e.ctrlKey || e.metaKey) && e.key === "y") {
       e.preventDefault();
       redo();
       fullRerender();
@@ -174,7 +180,7 @@ function setupKeyboard() {
 
 function setTool(tool: Tool) {
   currentTool = tool;
-  document.querySelectorAll(".toolbar button").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll(".toolbar button[id^='tool-']").forEach((b) => b.classList.remove("active"));
   document.getElementById(`tool-${tool}`)?.classList.add("active");
 }
 
@@ -191,6 +197,7 @@ function getSvgPoint(e: PointerEvent): { x: number; y: number } {
   if (!svg) return { x: e.offsetX, y: e.offsetY };
   const rect = svg.getBoundingClientRect();
   const viewBox = svg.viewBox.baseVal;
+  if (!viewBox || viewBox.width === 0) return { x: e.offsetX, y: e.offsetY };
   const scaleX = viewBox.width / rect.width;
   const scaleY = viewBox.height / rect.height;
   return {
@@ -199,27 +206,36 @@ function getSvgPoint(e: PointerEvent): { x: number; y: number } {
   };
 }
 
+/** Get the position attribute keys for a given element type. */
+function posKeys(el: Element): { x: string; y: string } {
+  const tag = el.tagName.toLowerCase();
+  if (tag === "circle" || tag === "ellipse") return { x: "cx", y: "cy" };
+  return { x: "x", y: "y" };
+}
+
 function onPointerDown(e: PointerEvent) {
   const pt = getSvgPoint(e);
 
   if (currentTool === "select") {
-    // Hit test: find element under cursor
     const target = e.target as Element;
     const nodeId = target?.getAttribute?.("data-node-id");
-    if (nodeId && target.tagName !== "svg") {
+
+    // Don't select the root <svg> or <defs>
+    if (nodeId && target.tagName !== "svg" && target.tagName !== "defs") {
       selectNode(nodeId);
       isDragging = true;
       dragStart = { x: pt.x, y: pt.y };
-      // Read current position from attrs
-      const xAttr = target.getAttribute("x") || target.getAttribute("cx") || "0";
-      const yAttr = target.getAttribute("y") || target.getAttribute("cy") || "0";
+
+      const keys = posKeys(target);
+      const xAttr = target.getAttribute(keys.x) || "0";
+      const yAttr = target.getAttribute(keys.y) || "0";
       dragNodeStart = { x: parseFloat(xAttr), y: parseFloat(yAttr) };
       container.setPointerCapture(e.pointerId);
     } else {
       deselectNode();
     }
   } else {
-    // Creation tools
+    // Shape creation tools
     const root = rootId();
     const size = 80;
 
@@ -260,7 +276,6 @@ function onPointerDown(e: PointerEvent) {
       selectNode(id);
     }
 
-    // Switch back to select after creating
     setTool("select");
   }
 }
@@ -274,16 +289,16 @@ function onPointerMove(e: PointerEvent) {
   const el = getElement(selectedNodeId);
   if (!el) return;
 
-  const isCircle = el.tagName === "circle" || el.tagName === "ellipse";
-  const xKey = isCircle ? "cx" : "x";
-  const yKey = isCircle ? "cy" : "y";
-
+  const keys = posKeys(el);
   const newX = String(Math.round(dragNodeStart.x + dx));
   const newY = String(Math.round(dragNodeStart.y + dy));
 
-  // Live preview via direct DOM manipulation (final position committed on pointerup)
-  el.setAttribute(xKey, newX);
-  el.setAttribute(yKey, newY);
+  // Live preview via direct DOM (committed on pointerup)
+  el.setAttribute(keys.x, newX);
+  el.setAttribute(keys.y, newY);
+
+  // Update selection overlay position
+  updateSelectionOverlay();
 }
 
 function onPointerUp(e: PointerEvent) {
@@ -294,15 +309,16 @@ function onPointerUp(e: PointerEvent) {
   const dy = pt.y - dragStart.y;
 
   if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-    // Commit the move via WASM (for undo/redo)
+    // Commit move as a single undoable batch
     const el = getElement(selectedNodeId);
-    const isCircle = el?.tagName === "circle" || el?.tagName === "ellipse";
-    const xKey = isCircle ? "cx" : "x";
-    const yKey = isCircle ? "cy" : "y";
-
-    setAttr(selectedNodeId, xKey, String(Math.round(dragNodeStart.x + dx)));
-    setAttr(selectedNodeId, yKey, String(Math.round(dragNodeStart.y + dy)));
-    render();
+    if (el) {
+      const keys = posKeys(el);
+      setAttrsBatch(selectedNodeId, {
+        [keys.x]: String(Math.round(dragNodeStart.x + dx)),
+        [keys.y]: String(Math.round(dragNodeStart.y + dy)),
+      });
+      render();
+    }
   }
 
   isDragging = false;
@@ -313,27 +329,54 @@ function onPointerUp(e: PointerEvent) {
 
 // ── Selection ───────────────────────────────────────────────────────────────
 
+let selectionOverlay: SVGRectElement | null = null;
+
 function selectNode(id: string) {
   deselectNode();
   selectedNodeId = id;
-  const el = getElement(id);
-  if (el) {
-    (el as SVGElement).style.outline = "2px solid #3b82f6";
-    (el as SVGElement).style.outlineOffset = "2px";
-  }
+  updateSelectionOverlay();
   showPropsFor(id);
 }
 
 function deselectNode() {
-  if (selectedNodeId) {
-    const el = getElement(selectedNodeId);
-    if (el) {
-      (el as SVGElement).style.outline = "";
-      (el as SVGElement).style.outlineOffset = "";
-    }
-  }
+  removeSelectionOverlay();
   selectedNodeId = null;
   showEmptyProps();
+}
+
+function updateSelectionOverlay() {
+  if (!selectedNodeId) return;
+  const el = getElement(selectedNodeId);
+  const svg = container.querySelector("svg");
+  if (!el || !svg) return;
+
+  const bbox = (el as SVGGraphicsElement).getBBox?.();
+  if (!bbox) return;
+
+  if (!selectionOverlay) {
+    selectionOverlay = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    selectionOverlay.setAttribute("fill", "none");
+    selectionOverlay.setAttribute("stroke", "#3b82f6");
+    selectionOverlay.setAttribute("stroke-width", "1.5");
+    selectionOverlay.setAttribute("stroke-dasharray", "4 3");
+    selectionOverlay.setAttribute("pointer-events", "none");
+    selectionOverlay.setAttribute("data-selection", "true");
+    svg.appendChild(selectionOverlay);
+  }
+
+  const pad = 4;
+  selectionOverlay.setAttribute("x", String(bbox.x - pad));
+  selectionOverlay.setAttribute("y", String(bbox.y - pad));
+  selectionOverlay.setAttribute("width", String(bbox.width + pad * 2));
+  selectionOverlay.setAttribute("height", String(bbox.height + pad * 2));
+  selectionOverlay.setAttribute("rx", "2");
+}
+
+function removeSelectionOverlay() {
+  if (selectionOverlay) {
+    selectionOverlay.remove();
+    selectionOverlay = null;
+  }
 }
 
 // ── Properties Panel ────────────────────────────────────────────────────────
@@ -347,51 +390,104 @@ function showPropsFor(id: string) {
   if (!el) return;
 
   const tag = el.tagName.toLowerCase();
-  const isCircle = tag === "circle" || tag === "ellipse";
-
-  const xKey = isCircle ? "cx" : "x";
-  const yKey = isCircle ? "cy" : "y";
-  const wKey = isCircle ? "rx" : "width";
-  const hKey = isCircle ? "ry" : "height";
-
-  const x = el.getAttribute(xKey) || "0";
-  const y = el.getAttribute(yKey) || "0";
-  const w = el.getAttribute(wKey) || "0";
-  const h = el.getAttribute(hKey) || "0";
   const fill = el.getAttribute("fill") || "#000000";
   const stroke = el.getAttribute("stroke") || "none";
   const strokeWidth = el.getAttribute("stroke-width") || "1";
 
+  // Fill color value safe for color input (must be #rrggbb)
+  const fillColor = fill.startsWith("#") && fill.length >= 7 ? fill.slice(0, 7) : "#000000";
+  const strokeColor = stroke.startsWith("#") && stroke.length >= 7 ? stroke.slice(0, 7) : "#000000";
+
+  let positionHtml = "";
+  let sizeHtml = "";
+
+  if (tag === "circle") {
+    const cx = el.getAttribute("cx") || "0";
+    const cy = el.getAttribute("cy") || "0";
+    const r = el.getAttribute("r") || "0";
+    positionHtml = `
+      <div class="prop-row"><label>CX</label><input type="number" data-attr="cx" value="${cx}"></div>
+      <div class="prop-row"><label>CY</label><input type="number" data-attr="cy" value="${cy}"></div>`;
+    sizeHtml = `
+      <div class="prop-row"><label>R</label><input type="number" data-attr="r" value="${r}"></div>`;
+  } else if (tag === "ellipse") {
+    const cx = el.getAttribute("cx") || "0";
+    const cy = el.getAttribute("cy") || "0";
+    const rx = el.getAttribute("rx") || "0";
+    const ry = el.getAttribute("ry") || "0";
+    positionHtml = `
+      <div class="prop-row"><label>CX</label><input type="number" data-attr="cx" value="${cx}"></div>
+      <div class="prop-row"><label>CY</label><input type="number" data-attr="cy" value="${cy}"></div>`;
+    sizeHtml = `
+      <div class="prop-row"><label>RX</label><input type="number" data-attr="rx" value="${rx}"></div>
+      <div class="prop-row"><label>RY</label><input type="number" data-attr="ry" value="${ry}"></div>`;
+  } else if (tag === "path") {
+    // Paths don't have x/y — show the bounding box info read-only
+    const bbox = (el as SVGGraphicsElement).getBBox?.();
+    if (bbox) {
+      positionHtml = `
+        <div class="prop-row"><label>X</label><input type="number" value="${Math.round(bbox.x)}" disabled></div>
+        <div class="prop-row"><label>Y</label><input type="number" value="${Math.round(bbox.y)}" disabled></div>`;
+      sizeHtml = `
+        <div class="prop-row"><label>W</label><input type="number" value="${Math.round(bbox.width)}" disabled></div>
+        <div class="prop-row"><label>H</label><input type="number" value="${Math.round(bbox.height)}" disabled></div>`;
+    }
+  } else if (tag === "text") {
+    const x = el.getAttribute("x") || "0";
+    const y = el.getAttribute("y") || "0";
+    const fontSize = el.getAttribute("font-size") || "16";
+    positionHtml = `
+      <div class="prop-row"><label>X</label><input type="number" data-attr="x" value="${x}"></div>
+      <div class="prop-row"><label>Y</label><input type="number" data-attr="y" value="${y}"></div>`;
+    sizeHtml = `
+      <div class="prop-row"><label>Size</label><input type="number" data-attr="font-size" value="${fontSize}"></div>`;
+  } else {
+    // rect, line, etc.
+    const x = el.getAttribute("x") || "0";
+    const y = el.getAttribute("y") || "0";
+    const w = el.getAttribute("width") || "0";
+    const h = el.getAttribute("height") || "0";
+    positionHtml = `
+      <div class="prop-row"><label>X</label><input type="number" data-attr="x" value="${x}"></div>
+      <div class="prop-row"><label>Y</label><input type="number" data-attr="y" value="${y}"></div>`;
+    sizeHtml = `
+      <div class="prop-row"><label>W</label><input type="number" data-attr="width" value="${w}"></div>
+      <div class="prop-row"><label>H</label><input type="number" data-attr="height" value="${h}"></div>`;
+  }
+
   propContent.innerHTML = `
     <div class="prop-group">
+      <h2>${tag.toUpperCase()}</h2>
+    </div>
+    <div class="prop-group">
       <h2>Position</h2>
-      <div class="prop-row"><label>${xKey.toUpperCase()}</label><input type="number" data-attr="${xKey}" value="${x}"></div>
-      <div class="prop-row"><label>${yKey.toUpperCase()}</label><input type="number" data-attr="${yKey}" value="${y}"></div>
+      ${positionHtml}
     </div>
     <div class="prop-group">
       <h2>Size</h2>
-      <div class="prop-row"><label>${wKey === "rx" ? "RX" : "W"}</label><input type="number" data-attr="${wKey}" value="${w}"></div>
-      <div class="prop-row"><label>${hKey === "ry" ? "RY" : "H"}</label><input type="number" data-attr="${hKey}" value="${h}"></div>
+      ${sizeHtml}
     </div>
     <div class="prop-group">
       <h2>Fill & Stroke</h2>
-      <div class="prop-row"><label>Fill</label><input type="color" data-attr="fill" value="${fill}"><input type="text" data-attr="fill" value="${fill}" style="flex:1"></div>
-      <div class="prop-row"><label>Stroke</label><input type="color" data-attr="stroke" value="${stroke === 'none' ? '#000000' : stroke}"><input type="text" data-attr="stroke" value="${stroke}" style="flex:1"></div>
-      <div class="prop-row"><label>Width</label><input type="number" data-attr="stroke-width" value="${strokeWidth}" step="0.5"></div>
+      <div class="prop-row"><label>Fill</label><input type="color" data-attr="fill" value="${fillColor}"><input type="text" data-attr="fill" value="${fill}" style="flex:1"></div>
+      <div class="prop-row"><label>Stroke</label><input type="color" data-attr="stroke" value="${strokeColor}"><input type="text" data-attr="stroke" value="${stroke}" style="flex:1"></div>
+      <div class="prop-row"><label>Width</label><input type="number" data-attr="stroke-width" value="${strokeWidth}" step="0.5" min="0"></div>
     </div>
   `;
 
   // Wire up change events
-  propContent.querySelectorAll("input").forEach((input) => {
-    input.addEventListener("change", () => {
-      const attr = input.dataset.attr;
+  propContent.querySelectorAll("input:not([disabled])").forEach((input) => {
+    const inp = input as HTMLInputElement;
+    inp.addEventListener("change", () => {
+      const attr = inp.dataset.attr;
       if (attr && selectedNodeId) {
-        setAttr(selectedNodeId, attr, input.value);
+        setAttr(selectedNodeId, attr, inp.value);
         render();
+        updateSelectionOverlay();
         updateUndoRedoButtons();
-        // Sync sibling inputs (color picker + text field)
+        // Sync paired color picker + text field
         propContent.querySelectorAll(`input[data-attr="${attr}"]`).forEach((sibling) => {
-          if (sibling !== input) (sibling as HTMLInputElement).value = input.value;
+          if (sibling !== inp) (sibling as HTMLInputElement).value = inp.value;
         });
       }
     });

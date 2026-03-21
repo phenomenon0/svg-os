@@ -14,6 +14,7 @@ export interface SvgOsWasm {
   svg_os_set_attr(id: string, key: string, value: string): void;
   svg_os_remove_attr(id: string, key: string): void;
   svg_os_reparent(id: string, new_parent: string, index: number): void;
+  svg_os_set_attrs_batch(id: string, attrs_json: string): void;
   svg_os_undo(): boolean;
   svg_os_redo(): boolean;
   svg_os_can_undo(): boolean;
