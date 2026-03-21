@@ -213,6 +213,27 @@
     .binding-item .attr { color: #3b82f6; }
     .binding-item .target { color: #f59e0b; }
 
+    .layer-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      color: #94a3b8;
+      transition: background 0.1s;
+    }
+    .layer-item:hover { background: #334155; }
+    .layer-item.selected { background: #1e3a5f; color: #e2e8f0; }
+    .layer-item .tag { color: #64748b; font-size: 10px; width: 40px; flex-shrink: 0; }
+    .layer-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .layer-item .vis-btn {
+      background: none; border: none; color: #64748b; cursor: pointer; font-size: 12px; padding: 0 2px;
+    }
+    .layer-item .vis-btn:hover { color: #e2e8f0; }
+    .layer-indent { margin-left: 16px; }
+
     #status {
       padding: 4px 16px;
       background: #1e293b;
@@ -234,6 +255,7 @@
       <button id="tool-rect" title="Rectangle (R)">Rect</button>
       <button id="tool-ellipse" title="Ellipse (E)">Ellipse</button>
       <button id="tool-path" title="Path (P)">Path</button>
+      <button id="tool-text" title="Text (T)">Text</button>
       <span class="sep"></span>
       <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
       <button id="btn-redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
@@ -249,12 +271,16 @@
     <div id="right-panel">
       <div class="panel-tabs">
         <button class="active" data-tab="props">Properties</button>
+        <button data-tab="layers">Layers</button>
         <button data-tab="data">Data</button>
       </div>
       <div class="panel-content" id="tab-props">
         <div id="prop-content">
           <p style="font-size:12px;color:#475569">Select a shape to edit properties</p>
         </div>
+      </div>
+      <div class="panel-content" id="tab-layers" hidden>
+        <div id="layers-list"></div>
       </div>
       <div class="panel-content" id="tab-data" hidden>
         <div id="data-content">
@@ -319,6 +345,8 @@
   <div id="status">
     <span id="status-text">Loading WASM...</span>
     <span id="status-nodes"></span>
+    <span style="flex:1"></span>
+    <span id="status-zoom">100%</span>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
