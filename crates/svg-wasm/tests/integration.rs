@@ -212,3 +212,243 @@ fn template_repeat_with_data() {
     let c2 = doc.get(created[2]).unwrap();
     assert_eq!(c2.get_f32(&AttrKey::Y), 50.0); // 40 + 10 gap, second row
 }
+
+// ── Phase 3 integration tests ──────────────────────────────────────────────
+
+#[test]
+fn effect_add_remove_round_trip() {
+    use svg_effects::{EffectStore, Effect};
+
+    let mut doc = Document::new();
+    let root = doc.root;
+    let rect = Node::new(SvgTag::Rect);
+    let rect_id = rect.id;
+    doc.insert_node(root, 1, rect);
+
+    let mut effects = EffectStore::new();
+    effects.add_effect(rect_id, Effect::GaussianBlur { std_dev: 5.0 });
+    effects.add_effect(rect_id, Effect::GaussianBlur { std_dev: 10.0 });
+    assert_eq!(effects.get(rect_id).unwrap().len(), 2);
+
+    effects.remove_effect(rect_id, 0);
+    let remaining = effects.get(rect_id).unwrap();
+    assert_eq!(remaining.len(), 1);
+
+    // The remaining effect should be the one with std_dev 10
+    match &remaining.effects[0] {
+        Effect::GaussianBlur { std_dev } => assert_eq!(*std_dev, 10.0),
+        _ => panic!("Expected GaussianBlur"),
+    }
+
+    effects.clear_node(rect_id);
+    assert!(effects.get(rect_id).is_none());
+}
+
+#[test]
+fn constraint_solve_updates_positions() {
+    let mut doc = Document::new();
+    let root = doc.root;
+
+    let mut r1 = Node::new(SvgTag::Rect);
+    r1.set_attr(AttrKey::X, AttrValue::F32(100.0));
+    r1.set_attr(AttrKey::Y, AttrValue::F32(100.0));
+    r1.set_attr(AttrKey::Width, AttrValue::F32(50.0));
+    r1.set_attr(AttrKey::Height, AttrValue::F32(50.0));
+    let r1_id = r1.id;
+    doc.insert_node(root, 1, r1);
+
+    let mut r2 = Node::new(SvgTag::Rect);
+    r2.set_attr(AttrKey::X, AttrValue::F32(0.0));
+    r2.set_attr(AttrKey::Y, AttrValue::F32(0.0));
+    r2.set_attr(AttrKey::Width, AttrValue::F32(30.0));
+    r2.set_attr(AttrKey::Height, AttrValue::F32(30.0));
+    let r2_id = r2.id;
+    doc.insert_node(root, 2, r2);
+
+    let mut store = ConstraintStore::new();
+    store.add(Constraint::Pin {
+        node: r2_id,
+        to: r1_id,
+        anchor: Anchor::TopLeft,
+        target_anchor: Anchor::TopRight,
+        offset: (20.0, 0.0),
+    });
+
+    store.solve(&mut doc, Rect::new(0.0, 0.0, 800.0, 600.0));
+
+    // r1 right edge = 100 + 50 = 150; r2 should be at 150 + 20 = 170
+    let r2_x = doc.get(r2_id).unwrap().get_f32(&AttrKey::X);
+    let r2_y = doc.get(r2_id).unwrap().get_f32(&AttrKey::Y);
+    assert!((r2_x - 170.0).abs() < 0.01, "r2_x={}", r2_x);
+    assert!((r2_y - 100.0).abs() < 0.01, "r2_y={}", r2_y);
+
+    // Verify the constraint changed positions from original (0,0)
+    assert!(r2_x > 100.0, "Constraint should have moved r2");
+}
+
+#[test]
+fn theme_token_resolution_e2e() {
+    let mut doc = Document::new();
+    let root = doc.root;
+
+    // Create nodes with multiple theme tokens
+    let mut rect = Node::new(SvgTag::Rect);
+    rect.set_attr(AttrKey::Fill, AttrValue::Str("{{color.primary}}".to_string()));
+    rect.set_attr(AttrKey::Stroke, AttrValue::Str("{{color.accent}}".to_string()));
+    let rect_id = rect.id;
+    doc.insert_node(root, 1, rect);
+
+    let mut text = Node::new(SvgTag::Text);
+    text.set_attr(AttrKey::FontFamily, AttrValue::Str("{{font.heading}}".to_string()));
+    let text_id = text.id;
+    doc.insert_node(root, 2, text);
+
+    // Apply default theme
+    let theme = Theme::default();
+    theme.apply(&mut doc);
+
+    // Verify all tokens resolved
+    let rect_node = doc.get(rect_id).unwrap();
+    let fill = rect_node.get_attr(&AttrKey::Fill);
+    assert!(fill.is_some(), "Fill should be resolved");
+    // Should not contain {{ anymore
+    match fill {
+        Some(AttrValue::Str(s)) => assert!(!s.contains("{{"), "Fill still contains token: {}", s),
+        Some(AttrValue::Color(_)) => {} // Good — parsed as color
+        other => panic!("Unexpected fill value: {:?}", other),
+    }
+
+    let text_node = doc.get(text_id).unwrap();
+    let font = text_node.get_string(&AttrKey::FontFamily);
+    assert!(font.is_some(), "Font should be resolved");
+    assert!(!font.unwrap().contains("{{"), "Font still contains token");
+}
+
+#[test]
+fn template_repeat_with_data_binding() {
+    let mut doc = Document::new();
+    let root = doc.root;
+
+    let mut tmpl = Node::new(SvgTag::Rect);
+    tmpl.set_attr(AttrKey::X, AttrValue::F32(0.0));
+    tmpl.set_attr(AttrKey::Y, AttrValue::F32(0.0));
+    tmpl.set_attr(AttrKey::Width, AttrValue::F32(60.0));
+    tmpl.set_attr(AttrKey::Height, AttrValue::F32(40.0));
+    let tmpl_id = tmpl.id;
+    doc.insert_node(root, 1, tmpl);
+
+    let rows = vec![
+        serde_json::json!({"fill": "#ff0000", "width": "100"}),
+        serde_json::json!({"fill": "#00ff00", "width": "120"}),
+        serde_json::json!({"fill": "#0000ff", "width": "80"}),
+    ];
+
+    let created = svg_runtime::template::repeat_template(
+        &mut doc, tmpl_id, &rows, 2, (10.0, 10.0),
+    );
+
+    assert_eq!(created.len(), 3);
+
+    // Each clone should have data applied
+    let c0 = doc.get(created[0]).unwrap();
+    assert_eq!(c0.get_f32(&AttrKey::Width), 100.0);
+
+    let c1 = doc.get(created[1]).unwrap();
+    assert_eq!(c1.get_f32(&AttrKey::Width), 120.0);
+    // c1 is in column 1: x = 0 + 1*(60+10) = 70
+    assert_eq!(c1.get_f32(&AttrKey::X), 70.0);
+}
+
+#[test]
+fn batch_set_attrs_undo_as_single_step() {
+    let mut doc = Document::new();
+    let root = doc.root;
+
+    let mut rect = Node::new(SvgTag::Rect);
+    rect.set_attr(AttrKey::X, AttrValue::F32(10.0));
+    rect.set_attr(AttrKey::Y, AttrValue::F32(20.0));
+    rect.set_attr(AttrKey::Width, AttrValue::F32(100.0));
+    let rect_id = rect.id;
+    doc.insert_node(root, 1, rect);
+
+    // Batch set via commands
+    let batch = SvgCommand::Batch {
+        commands: vec![
+            SvgCommand::SetAttr { id: rect_id, key: AttrKey::X, value: AttrValue::F32(50.0), old_value: None },
+            SvgCommand::SetAttr { id: rect_id, key: AttrKey::Y, value: AttrValue::F32(60.0), old_value: None },
+            SvgCommand::SetAttr { id: rect_id, key: AttrKey::Width, value: AttrValue::F32(200.0), old_value: None },
+        ],
+    };
+
+    let undo = batch.execute(&mut doc);
+
+    // Verify batch applied
+    assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::X), 50.0);
+    assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::Y), 60.0);
+    assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::Width), 200.0);
+
+    // Undo entire batch as one step
+    undo.execute(&mut doc);
+    assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::X), 10.0);
+    assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::Y), 20.0);
+    assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::Width), 100.0);
+}
+
+#[test]
+fn export_after_modifications() {
+    let mut doc = Document::new();
+    let root = doc.root;
+
+    let mut rect = Node::new(SvgTag::Rect);
+    rect.set_attr(AttrKey::X, AttrValue::F32(10.0));
+    rect.set_attr(AttrKey::Y, AttrValue::F32(20.0));
+    rect.set_attr(AttrKey::Width, AttrValue::F32(100.0));
+    rect.set_attr(AttrKey::Height, AttrValue::F32(50.0));
+    rect.set_attr(AttrKey::Fill, AttrValue::Str("#ff0000".to_string()));
+    doc.insert_node(root, 1, rect);
+
+    // Add an effect
+    let mut effects = svg_effects::EffectStore::new();
+    let rect_id = doc.children(root)[1]; // The rect we just added
+    effects.add_effect(rect_id, svg_effects::Effect::GaussianBlur { std_dev: 5.0 });
+    effects.apply_to_document(&mut doc);
+
+    // Export
+    let svg = doc_to_svg_string(&doc);
+    assert!(svg.contains("<rect"));
+    assert!(svg.contains("width=\"100\""));
+    assert!(svg.contains("<filter"));
+
+    // Re-import and verify
+    let doc2 = doc_from_svg_string(&svg).unwrap();
+    assert!(doc2.node_count() >= doc.node_count() - 1, "Re-import should preserve nodes");
+}
+
+#[test]
+fn clone_subtree_preserves_attrs() {
+    let mut doc = Document::new();
+    let root = doc.root;
+
+    let group = Node::new(SvgTag::G);
+    let group_id = group.id;
+    doc.insert_node(root, 1, group);
+
+    let mut rect = Node::new(SvgTag::Rect);
+    rect.set_attr(AttrKey::X, AttrValue::F32(10.0));
+    rect.set_attr(AttrKey::Fill, AttrValue::Str("#ff0000".to_string()));
+    rect.set_attr(AttrKey::Width, AttrValue::F32(100.0));
+    rect.set_attr(AttrKey::Height, AttrValue::F32(50.0));
+    doc.insert_node(group_id, 0, rect);
+
+    let clone_id = doc.clone_subtree(group_id).unwrap();
+    let clone = doc.get(clone_id).unwrap();
+
+    // Clone should have one child
+    assert_eq!(clone.children.len(), 1);
+    assert_ne!(clone_id, group_id);
+
+    // Child should have same attrs
+    let child = doc.get(clone.children[0]).unwrap();
+    assert_eq!(child.get_f32(&AttrKey::X), 10.0);
+    assert_eq!(child.get_f32(&AttrKey::Width), 100.0);
+}

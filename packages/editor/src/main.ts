@@ -1,5 +1,6 @@
 /**
- * SVG OS Editor — MVP canvas with zoom/pan, layers, text tool, data binding.
+ * SVG OS Editor — Phase 3: Group/ungroup, copy/paste, duplicate,
+ * resize handles, grid snapping.
  */
 
 import {
@@ -9,6 +10,7 @@ import {
   getRenderOps, getFullRenderOps, applyOps, resetElementMap,
   importSvg, exportSvg, getElement,
   bind, evaluateBindings, applyTheme, repeatTemplate,
+  cloneNode, groupNodes, ungroupNode,
 } from "@svg-os/bridge";
 import type { Binding, Theme } from "@svg-os/bridge";
 
@@ -20,18 +22,31 @@ let currentTool: Tool = "select";
 let selectedNodeId: string | null = null;
 let isDragging = false;
 let isPanning = false;
+let isResizing = false;
+let resizeHandle: string | null = null;
+let resizeStart = { x: 0, y: 0 };
+let resizeNodeStart = { x: 0, y: 0, w: 0, h: 0 };
 let dragStart = { x: 0, y: 0 };
 let dragNodeStart = { x: 0, y: 0 };
 let panStart = { x: 0, y: 0 };
 let viewTransform = { x: 0, y: 0, scale: 1 };
 let loadedData: unknown = null;
 let activeBindings: Array<{ nodeId: string; field: string; attr: string }> = [];
+let clipboardNodeId: string | null = null;
+let gridSnap = false;
+let gridSize = 8;
 
 const container = document.getElementById("canvas-container")!;
 const statusText = document.getElementById("status-text")!;
 const statusNodes = document.getElementById("status-nodes")!;
 const statusZoom = document.getElementById("status-zoom")!;
 const propContent = document.getElementById("prop-content")!;
+
+// ── Grid snapping ────────────────────────────────────────────────────────────
+
+function snap(v: number): number {
+  return gridSnap ? Math.round(v / gridSize) * gridSize : Math.round(v);
+}
 
 // ── Init ────────────────────────────────────────────────────────────────────
 
@@ -82,10 +97,12 @@ function applyViewTransform() {
 function updateStatus() {
   const svg = container.querySelector("svg");
   if (svg) {
-    const count = svg.querySelectorAll("*:not([data-selection])").length;
+    const count = svg.querySelectorAll("*:not([data-selection]):not([data-handle])").length;
     statusNodes.textContent = `${count} elements`;
   }
   statusZoom.textContent = `${Math.round(viewTransform.scale * 100)}%`;
+  const snapStatus = document.getElementById("status-snap");
+  if (snapStatus) snapStatus.textContent = gridSnap ? `Snap: ${gridSize}px` : "";
   updateUndoRedoButtons();
 }
 
@@ -153,6 +170,15 @@ function setupTools() {
     fullRerender();
     statusText.textContent = `Theme: ${themes[themeIdx].name}`;
   });
+
+  // Grid snap toggle
+  document.getElementById("btn-snap")?.addEventListener("click", () => {
+    gridSnap = !gridSnap;
+    const btn = document.getElementById("btn-snap")!;
+    btn.classList.toggle("active", gridSnap);
+    statusText.textContent = gridSnap ? `Grid snap ON (${gridSize}px)` : "Grid snap OFF";
+    updateStatus();
+  });
 }
 
 // ── Keyboard ────────────────────────────────────────────────────────────────
@@ -179,12 +205,55 @@ function setupKeyboard() {
           return;
       }
     }
-    if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) { e.preventDefault(); undo(); fullRerender(); }
-    if ((e.ctrlKey || e.metaKey) && (e.key === "Z" || (e.key === "z" && e.shiftKey))) { e.preventDefault(); redo(); fullRerender(); }
-    if ((e.ctrlKey || e.metaKey) && e.key === "y") { e.preventDefault(); redo(); fullRerender(); }
-    // Ctrl+= / Ctrl+- zoom
-    if ((e.ctrlKey || e.metaKey) && (e.key === "=" || e.key === "+")) { e.preventDefault(); zoom(1.2); }
-    if ((e.ctrlKey || e.metaKey) && e.key === "-") { e.preventDefault(); zoom(1 / 1.2); }
+
+    // Ctrl/Cmd shortcuts
+    if (e.ctrlKey || e.metaKey) {
+      switch (e.key.toLowerCase()) {
+        case "z":
+          e.preventDefault();
+          if (e.shiftKey) { redo(); } else { undo(); }
+          fullRerender();
+          return;
+        case "y":
+          e.preventDefault();
+          redo();
+          fullRerender();
+          return;
+        case "=": case "+":
+          e.preventDefault();
+          zoom(1.2);
+          return;
+        case "-":
+          e.preventDefault();
+          zoom(1 / 1.2);
+          return;
+        case "c": // Copy
+          e.preventDefault();
+          if (selectedNodeId) {
+            clipboardNodeId = selectedNodeId;
+            statusText.textContent = "Copied";
+          }
+          return;
+        case "v": // Paste
+          if (clipboardNodeId) {
+            e.preventDefault();
+            pasteNode();
+          }
+          return;
+        case "d": // Duplicate
+          e.preventDefault();
+          if (selectedNodeId) duplicateNode();
+          return;
+        case "g": // Group / Ungroup
+          e.preventDefault();
+          if (e.shiftKey) {
+            ungroupSelected();
+          } else {
+            groupSelected();
+          }
+          return;
+      }
+    }
   });
 }
 
@@ -192,6 +261,68 @@ function setTool(tool: Tool) {
   currentTool = tool;
   document.querySelectorAll(".toolbar button[id^='tool-']").forEach((b) => b.classList.remove("active"));
   document.getElementById(`tool-${tool}`)?.classList.add("active");
+}
+
+// ── Group / Ungroup ─────────────────────────────────────────────────────────
+
+function groupSelected() {
+  if (!selectedNodeId) return;
+  const groupId = groupNodes([selectedNodeId]);
+  fullRerender();
+  // Re-select the new group after rerender
+  setTimeout(() => selectNode(groupId), 0);
+  statusText.textContent = "Grouped";
+}
+
+function ungroupSelected() {
+  if (!selectedNodeId) return;
+  const el = getElement(selectedNodeId);
+  if (!el || el.tagName.toLowerCase() !== "g") {
+    statusText.textContent = "Select a group to ungroup";
+    return;
+  }
+  ungroupNode(selectedNodeId);
+  fullRerender();
+  statusText.textContent = "Ungrouped";
+}
+
+// ── Copy / Paste / Duplicate ────────────────────────────────────────────────
+
+function pasteNode() {
+  if (!clipboardNodeId) return;
+  const newId = cloneNode(clipboardNodeId);
+  // Offset pasted node by (20, 20) from original
+  const el = getElement(clipboardNodeId);
+  if (el) {
+    const keys = posKeys(el);
+    const origX = parseFloat(el.getAttribute(keys.x) || "0");
+    const origY = parseFloat(el.getAttribute(keys.y) || "0");
+    setAttrsBatch(newId, {
+      [keys.x]: String(snap(origX + 20)),
+      [keys.y]: String(snap(origY + 20)),
+    });
+  }
+  fullRerender();
+  setTimeout(() => selectNode(newId), 0);
+  statusText.textContent = "Pasted";
+}
+
+function duplicateNode() {
+  if (!selectedNodeId) return;
+  const newId = cloneNode(selectedNodeId);
+  const el = getElement(selectedNodeId);
+  if (el) {
+    const keys = posKeys(el);
+    const origX = parseFloat(el.getAttribute(keys.x) || "0");
+    const origY = parseFloat(el.getAttribute(keys.y) || "0");
+    setAttrsBatch(newId, {
+      [keys.x]: String(snap(origX + 20)),
+      [keys.y]: String(snap(origY + 20)),
+    });
+  }
+  fullRerender();
+  setTimeout(() => selectNode(newId), 0);
+  statusText.textContent = "Duplicated";
 }
 
 // ── Zoom / Pan ──────────────────────────────────────────────────────────────
@@ -242,12 +373,10 @@ function posKeys(el: Element) {
 function onWheel(e: WheelEvent) {
   e.preventDefault();
   if (e.ctrlKey || e.metaKey) {
-    // Pinch zoom
     const factor = e.deltaY > 0 ? 1 / 1.1 : 1.1;
     const rect = container.getBoundingClientRect();
     zoom(factor, e.clientX - rect.left, e.clientY - rect.top);
   } else {
-    // Scroll to pan
     viewTransform.x -= e.deltaX;
     viewTransform.y -= e.deltaY;
     applyViewTransform();
@@ -258,7 +387,7 @@ function onWheel(e: WheelEvent) {
 function onPointerDown(e: PointerEvent) {
   const pt = getSvgPoint(e.clientX, e.clientY);
 
-  // Middle mouse or space+click to pan
+  // Middle mouse to pan
   if (e.button === 1) {
     isPanning = true;
     panStart = { x: e.clientX - viewTransform.x, y: e.clientY - viewTransform.y };
@@ -267,24 +396,54 @@ function onPointerDown(e: PointerEvent) {
     return;
   }
 
+  // Check if clicking a resize handle
+  const target = e.target as Element;
+  const handleDir = target?.getAttribute?.("data-handle");
+  if (handleDir && selectedNodeId) {
+    isResizing = true;
+    resizeHandle = handleDir;
+    resizeStart = pt;
+    const el = getElement(selectedNodeId);
+    if (el) {
+      const tag = el.tagName.toLowerCase();
+      if (tag === "ellipse") {
+        resizeNodeStart = {
+          x: parseFloat(el.getAttribute("cx") || "0"),
+          y: parseFloat(el.getAttribute("cy") || "0"),
+          w: parseFloat(el.getAttribute("rx") || "0") * 2,
+          h: parseFloat(el.getAttribute("ry") || "0") * 2,
+        };
+      } else {
+        resizeNodeStart = {
+          x: parseFloat(el.getAttribute("x") || "0"),
+          y: parseFloat(el.getAttribute("y") || "0"),
+          w: parseFloat(el.getAttribute("width") || "0"),
+          h: parseFloat(el.getAttribute("height") || "0"),
+        };
+      }
+    }
+    container.setPointerCapture(e.pointerId);
+    return;
+  }
+
   if (currentTool === "select") {
-    const target = e.target as Element;
     const nodeId = target?.getAttribute?.("data-node-id");
-    if (nodeId && target.tagName !== "svg" && target.tagName !== "defs" && !target.hasAttribute("data-selection")) {
+    if (nodeId && target.tagName !== "svg" && target.tagName !== "defs"
+      && !target.hasAttribute("data-selection") && !target.hasAttribute("data-handle")) {
       selectNode(nodeId);
       isDragging = true;
       dragStart = pt;
       const keys = posKeys(target);
       dragNodeStart = { x: parseFloat(target.getAttribute(keys.x) || "0"), y: parseFloat(target.getAttribute(keys.y) || "0") };
       container.setPointerCapture(e.pointerId);
-    } else {
+    } else if (!handleDir) {
       deselectNode();
     }
   } else if (currentTool === "text") {
     const root = rootId();
     const id = createNode(root, "text", {
-      x: String(Math.round(pt.x)),
-      y: String(Math.round(pt.y)),
+      x: String(snap(pt.x)),
+      y: String(snap(pt.y)),
       "font-family": "Inter, system-ui, sans-serif",
       "font-size": "18",
       fill: "#0f172a",
@@ -302,17 +461,17 @@ function onPointerDown(e: PointerEvent) {
 
     if (currentTool === "rect") {
       id = createNode(root, "rect", {
-        x: String(Math.round(pt.x - s/2)), y: String(Math.round(pt.y - s/2)),
+        x: String(snap(pt.x - s/2)), y: String(snap(pt.y - s/2)),
         width: String(s), height: String(s), fill: "#3b82f6", stroke: "#1d4ed8", "stroke-width": "2", rx: "4",
       });
     } else if (currentTool === "ellipse") {
       id = createNode(root, "ellipse", {
-        cx: String(Math.round(pt.x)), cy: String(Math.round(pt.y)),
+        cx: String(snap(pt.x)), cy: String(snap(pt.y)),
         rx: String(s/2), ry: String(s/3), fill: "#8b5cf6", stroke: "#6d28d9", "stroke-width": "2",
       });
     } else if (currentTool === "path") {
       id = createNode(root, "path", {
-        d: `M${Math.round(pt.x)},${Math.round(pt.y)} l60,-30 l0,60 Z`,
+        d: `M${snap(pt.x)},${snap(pt.y)} l60,-30 l0,60 Z`,
         fill: "#f59e0b", stroke: "#d97706", "stroke-width": "2",
       });
     }
@@ -330,13 +489,20 @@ function onPointerMove(e: PointerEvent) {
     applyViewTransform();
     return;
   }
+  if (isResizing && selectedNodeId && resizeHandle) {
+    const pt = getSvgPoint(e.clientX, e.clientY);
+    const dx = pt.x - resizeStart.x;
+    const dy = pt.y - resizeStart.y;
+    applyResize(dx, dy);
+    return;
+  }
   if (!isDragging || !selectedNodeId) return;
   const pt = getSvgPoint(e.clientX, e.clientY);
   const el = getElement(selectedNodeId);
   if (!el) return;
   const keys = posKeys(el);
-  el.setAttribute(keys.x, String(Math.round(dragNodeStart.x + pt.x - dragStart.x)));
-  el.setAttribute(keys.y, String(Math.round(dragNodeStart.y + pt.y - dragStart.y)));
+  el.setAttribute(keys.x, String(snap(dragNodeStart.x + pt.x - dragStart.x)));
+  el.setAttribute(keys.y, String(snap(dragNodeStart.y + pt.y - dragStart.y)));
   updateSelectionOverlay();
 }
 
@@ -345,6 +511,16 @@ function onPointerUp(e: PointerEvent) {
     isPanning = false;
     container.releasePointerCapture(e.pointerId);
     container.style.cursor = "";
+    return;
+  }
+  if (isResizing && selectedNodeId && resizeHandle) {
+    const pt = getSvgPoint(e.clientX, e.clientY);
+    const dx = pt.x - resizeStart.x;
+    const dy = pt.y - resizeStart.y;
+    commitResize(dx, dy);
+    isResizing = false;
+    resizeHandle = null;
+    container.releasePointerCapture(e.pointerId);
     return;
   }
   if (!isDragging || !selectedNodeId) return;
@@ -356,8 +532,8 @@ function onPointerUp(e: PointerEvent) {
     if (el) {
       const keys = posKeys(el);
       setAttrsBatch(selectedNodeId, {
-        [keys.x]: String(Math.round(dragNodeStart.x + dx)),
-        [keys.y]: String(Math.round(dragNodeStart.y + dy)),
+        [keys.x]: String(snap(dragNodeStart.x + dx)),
+        [keys.y]: String(snap(dragNodeStart.y + dy)),
       });
       render();
     }
@@ -369,6 +545,145 @@ function onPointerUp(e: PointerEvent) {
   if (selectedNodeId) showPropsFor(selectedNodeId);
 }
 
+// ── Resize handles ──────────────────────────────────────────────────────────
+
+const HANDLE_SIZE = 8;
+const HANDLE_DIRS = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
+let handleElements: SVGRectElement[] = [];
+
+function createResizeHandles() {
+  removeResizeHandles();
+  if (!selectedNodeId) return;
+  const el = getElement(selectedNodeId);
+  const svg = container.querySelector("svg");
+  if (!el || !svg) return;
+
+  // Skip paths (no simple resize)
+  if (el.tagName.toLowerCase() === "path") return;
+
+  const bbox = (el as SVGGraphicsElement).getBBox?.();
+  if (!bbox) return;
+
+  for (const dir of HANDLE_DIRS) {
+    const handle = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    handle.setAttribute("width", String(HANDLE_SIZE));
+    handle.setAttribute("height", String(HANDLE_SIZE));
+    handle.setAttribute("fill", "#ffffff");
+    handle.setAttribute("stroke", "#3b82f6");
+    handle.setAttribute("stroke-width", "1.5");
+    handle.setAttribute("data-handle", dir);
+    handle.setAttribute("data-selection", "true");
+    handle.style.cursor = handleCursor(dir);
+    svg.appendChild(handle);
+    handleElements.push(handle);
+  }
+
+  positionHandles(bbox);
+}
+
+function positionHandles(bbox: DOMRect) {
+  const hs = HANDLE_SIZE / 2;
+  const positions: Record<string, { x: number; y: number }> = {
+    nw: { x: bbox.x - hs, y: bbox.y - hs },
+    n:  { x: bbox.x + bbox.width / 2 - hs, y: bbox.y - hs },
+    ne: { x: bbox.x + bbox.width - hs, y: bbox.y - hs },
+    e:  { x: bbox.x + bbox.width - hs, y: bbox.y + bbox.height / 2 - hs },
+    se: { x: bbox.x + bbox.width - hs, y: bbox.y + bbox.height - hs },
+    s:  { x: bbox.x + bbox.width / 2 - hs, y: bbox.y + bbox.height - hs },
+    sw: { x: bbox.x - hs, y: bbox.y + bbox.height - hs },
+    w:  { x: bbox.x - hs, y: bbox.y + bbox.height / 2 - hs },
+  };
+
+  handleElements.forEach((h) => {
+    const dir = h.getAttribute("data-handle")!;
+    const pos = positions[dir];
+    if (pos) {
+      h.setAttribute("x", String(pos.x));
+      h.setAttribute("y", String(pos.y));
+    }
+  });
+}
+
+function handleCursor(dir: string): string {
+  const cursors: Record<string, string> = {
+    nw: "nwse-resize", n: "ns-resize", ne: "nesw-resize", e: "ew-resize",
+    se: "nwse-resize", s: "ns-resize", sw: "nesw-resize", w: "ew-resize",
+  };
+  return cursors[dir] || "pointer";
+}
+
+function removeResizeHandles() {
+  handleElements.forEach((h) => h.remove());
+  handleElements = [];
+}
+
+function applyResize(dx: number, dy: number) {
+  if (!selectedNodeId || !resizeHandle) return;
+  const el = getElement(selectedNodeId);
+  if (!el) return;
+
+  const tag = el.tagName.toLowerCase();
+  const { x, y, w, h } = computeResizedRect(dx, dy);
+
+  if (tag === "ellipse") {
+    el.setAttribute("cx", String(snap(x + w / 2)));
+    el.setAttribute("cy", String(snap(y + h / 2)));
+    el.setAttribute("rx", String(Math.max(1, snap(w / 2))));
+    el.setAttribute("ry", String(Math.max(1, snap(h / 2))));
+  } else {
+    el.setAttribute("x", String(snap(x)));
+    el.setAttribute("y", String(snap(y)));
+    el.setAttribute("width", String(Math.max(1, snap(w))));
+    el.setAttribute("height", String(Math.max(1, snap(h))));
+  }
+
+  updateSelectionOverlay();
+}
+
+function commitResize(dx: number, dy: number) {
+  if (!selectedNodeId || !resizeHandle) return;
+  const el = getElement(selectedNodeId);
+  if (!el) return;
+
+  const tag = el.tagName.toLowerCase();
+  const { x, y, w, h } = computeResizedRect(dx, dy);
+
+  if (tag === "ellipse") {
+    setAttrsBatch(selectedNodeId, {
+      cx: String(snap(x + w / 2)),
+      cy: String(snap(y + h / 2)),
+      rx: String(Math.max(1, snap(w / 2))),
+      ry: String(Math.max(1, snap(h / 2))),
+    });
+  } else {
+    setAttrsBatch(selectedNodeId, {
+      x: String(snap(x)),
+      y: String(snap(y)),
+      width: String(Math.max(1, snap(w))),
+      height: String(Math.max(1, snap(h))),
+    });
+  }
+  render();
+  updateSelectionOverlay();
+  if (selectedNodeId) showPropsFor(selectedNodeId);
+}
+
+function computeResizedRect(dx: number, dy: number) {
+  let { x, y, w, h } = resizeNodeStart;
+  const dir = resizeHandle!;
+
+  if (dir.includes("e")) w += dx;
+  if (dir.includes("w")) { x += dx; w -= dx; }
+  if (dir.includes("s")) h += dy;
+  if (dir.includes("n")) { y += dy; h -= dy; }
+
+  // Prevent negative sizes
+  if (w < 1) { w = 1; }
+  if (h < 1) { h = 1; }
+
+  return { x, y, w, h };
+}
+
 // ── Selection ───────────────────────────────────────────────────────────────
 
 let selectionOverlay: SVGRectElement | null = null;
@@ -377,6 +692,7 @@ function selectNode(id: string) {
   deselectNode();
   selectedNodeId = id;
   updateSelectionOverlay();
+  createResizeHandles();
   showPropsFor(id);
   updateBindingForm();
   highlightLayerItem(id);
@@ -384,6 +700,7 @@ function selectNode(id: string) {
 
 function deselectNode() {
   removeSelectionOverlay();
+  removeResizeHandles();
   selectedNodeId = null;
   showEmptyProps();
   updateBindingForm();
@@ -414,6 +731,9 @@ function updateSelectionOverlay() {
   selectionOverlay.setAttribute("width", String(bbox.width + pad * 2));
   selectionOverlay.setAttribute("height", String(bbox.height + pad * 2));
   selectionOverlay.setAttribute("rx", "2");
+
+  // Reposition handles
+  if (handleElements.length > 0) positionHandles(bbox);
 }
 
 function removeSelectionOverlay() {
@@ -436,18 +756,15 @@ function updateLayers() {
   function walk(el: Element, depth: number) {
     const nodeId = el.getAttribute("data-node-id");
     if (!nodeId) return;
-    if (el.hasAttribute("data-selection")) return;
+    if (el.hasAttribute("data-selection") || el.hasAttribute("data-handle")) return;
     const tag = el.tagName.toLowerCase();
     if (tag === "svg") {
-      // Walk children only
       for (const child of Array.from(el.children)) walk(child, depth);
       return;
     }
 
-    // Skip defs subtree in layer list
     if (nodeId === defsNodeId) return;
 
-    const indent = depth > 0 ? ` class="layer-indent"`.repeat(Math.min(depth, 3)) : "";
     const sel = nodeId === selectedNodeId ? " selected" : "";
     const name = el.getAttribute("id") || el.textContent?.slice(0, 15) || tag;
     const fill = el.getAttribute("fill");
@@ -467,9 +784,8 @@ function updateLayers() {
   }
 
   walk(svg, 0);
-  list.innerHTML = items.reverse().join(""); // Top layer first
+  list.innerHTML = items.reverse().join("");
 
-  // Click to select
   list.querySelectorAll(".layer-item").forEach((item) => {
     item.addEventListener("click", () => {
       const layerId = (item as HTMLElement).dataset.layerId;

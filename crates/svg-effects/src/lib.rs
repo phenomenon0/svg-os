@@ -267,4 +267,74 @@ mod tests {
         store.clear_node(id);
         assert!(store.get(id).is_none());
     }
+
+    #[test]
+    fn color_matrix_filter_svg() {
+        let mut stack = EffectStack::new();
+        // Identity matrix with slight saturation adjustment
+        let mut matrix = [0.0f32; 20];
+        matrix[0] = 1.0; matrix[6] = 1.0; matrix[12] = 1.0; matrix[18] = 1.0;
+        stack.push(Effect::ColorMatrix { matrix });
+
+        let svg = stack.to_filter_svg("cm1").unwrap();
+        assert!(svg.contains("feColorMatrix"));
+        assert!(svg.contains("type=\"matrix\""));
+        assert!(svg.contains("values="));
+    }
+
+    #[test]
+    fn multiple_stacked_effects() {
+        let mut stack = EffectStack::new();
+        stack.push(Effect::GaussianBlur { std_dev: 3.0 });
+        stack.push(Effect::DropShadow {
+            dx: 2.0, dy: 2.0, blur: 4.0,
+            color: Color::rgba(0.0, 0.0, 0.0, 0.3),
+        });
+
+        let svg = stack.to_filter_svg("multi1").unwrap();
+        assert!(svg.contains("feGaussianBlur"), "Missing blur");
+        assert!(svg.contains("feOffset"), "Missing shadow offset");
+        assert!(svg.contains("feMerge"), "Missing merge");
+    }
+
+    #[test]
+    fn path_effect_detection() {
+        let mut stack = EffectStack::new();
+
+        // No path effects initially
+        assert!(!stack.has_path_effects());
+
+        // Filter effect doesn't count as path effect
+        stack.push(Effect::GaussianBlur { std_dev: 5.0 });
+        assert!(!stack.has_path_effects());
+
+        // PathOffset is a path effect
+        stack.push(Effect::PathOffset { distance: 3.0 });
+        assert!(stack.has_path_effects());
+    }
+
+    #[test]
+    fn apply_to_document_creates_filter() {
+        let mut doc = Document::new();
+        let root = doc.root;
+
+        let mut rect = Node::new(SvgTag::Rect);
+        rect.set_attr(AttrKey::Fill, AttrValue::Str("#ff0000".to_string()));
+        let rect_id = rect.id;
+        doc.insert_node(root, 1, rect);
+
+        let mut store = EffectStore::new();
+        store.add_effect(rect_id, Effect::GaussianBlur { std_dev: 5.0 });
+
+        store.apply_to_document(&mut doc);
+
+        // Rect should now have a filter reference
+        let node = doc.get(rect_id).unwrap();
+        let filter_ref = node.get_attr(&AttrKey::FilterRef);
+        assert!(filter_ref.is_some(), "Expected filter reference on rect");
+
+        // Defs should contain a filter node
+        let defs_children = doc.children(doc.defs);
+        assert!(!defs_children.is_empty(), "Expected filter node in defs");
+    }
 }

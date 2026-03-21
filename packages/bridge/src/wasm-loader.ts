@@ -36,6 +36,12 @@ export interface SvgOsWasm {
   svg_os_instantiate_template(template_id: string, data_json: string): string;
   svg_os_repeat_template(template_id: string, rows_json: string, columns: number, gap_x: number, gap_y: number): string;
   svg_os_export_node_svg(node_id: string): string;
+
+  // Phase 3
+  svg_os_clone_node(id: string): string;
+  svg_os_group_nodes(ids_json: string): string;
+  svg_os_ungroup(group_id: string): void;
+  svg_os_get_node_info(id: string): string;
 }
 
 let wasmModule: SvgOsWasm | null = null;

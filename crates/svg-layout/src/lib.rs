@@ -466,4 +466,169 @@ mod tests {
         let r2_x = doc.get(r2).unwrap().get_f32(&AttrKey::X);
         assert!((r2_x - 10.0).abs() < 0.01);
     }
+
+    #[test]
+    fn aspect_lock_adjusts_height() {
+        let mut doc = Document::new();
+        let root = doc.root;
+
+        let mut rect = Node::new(SvgTag::Rect);
+        rect.set_attr(AttrKey::X, AttrValue::F32(0.0));
+        rect.set_attr(AttrKey::Y, AttrValue::F32(0.0));
+        rect.set_attr(AttrKey::Width, AttrValue::F32(200.0));
+        rect.set_attr(AttrKey::Height, AttrValue::F32(100.0)); // Current ratio 2:1
+        let rect_id = rect.id;
+        doc.insert_node(root, 1, rect);
+
+        let mut store = ConstraintStore::new();
+        store.add(Constraint::AspectLock {
+            node: rect_id,
+            ratio: (16, 9), // Target 16:9
+        });
+
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        store.solve(&mut doc, viewport);
+
+        // Width stays 200, height should become 200 / (16/9) = 112.5
+        let h = doc.get(rect_id).unwrap().get_f32(&AttrKey::Height);
+        assert!((h - 112.5).abs() < 0.1, "Expected height ~112.5, got {}", h);
+    }
+
+    #[test]
+    fn repeat_grid_positions_clones() {
+        let mut doc = Document::new();
+        let root = doc.root;
+
+        let mut tmpl = Node::new(SvgTag::Rect);
+        tmpl.set_attr(AttrKey::X, AttrValue::F32(0.0));
+        tmpl.set_attr(AttrKey::Y, AttrValue::F32(0.0));
+        tmpl.set_attr(AttrKey::Width, AttrValue::F32(50.0));
+        tmpl.set_attr(AttrKey::Height, AttrValue::F32(30.0));
+        let tmpl_id = tmpl.id;
+        doc.insert_node(root, 1, tmpl);
+
+        let mut store = ConstraintStore::new();
+        store.add(Constraint::RepeatGrid {
+            template: tmpl_id,
+            count: 4,
+            columns: 2,
+            gap: (10.0, 10.0),
+        });
+
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        store.solve(&mut doc, viewport);
+
+        // Should have created 3 clones (count - 1) + original = 4 rects total
+        let children = doc.children(root);
+        // defs + original + 3 clones = 5
+        assert!(children.len() >= 4, "Expected at least 4 children of root, got {}", children.len());
+    }
+
+    #[test]
+    fn distribute_along_y_axis() {
+        let mut doc = Document::new();
+        let root = doc.root;
+
+        let mut group = Node::new(SvgTag::G);
+        group.set_attr(AttrKey::X, AttrValue::F32(10.0));
+        group.set_attr(AttrKey::Y, AttrValue::F32(10.0));
+        let group_id = group.id;
+        doc.insert_node(root, 1, group);
+
+        for _i in 0..3 {
+            let mut r = Node::new(SvgTag::Rect);
+            r.set_attr(AttrKey::Width, AttrValue::F32(40.0));
+            r.set_attr(AttrKey::Height, AttrValue::F32(30.0));
+            let idx = doc.children(group_id).len();
+            doc.insert_node(group_id, idx, r);
+        }
+
+        let mut store = ConstraintStore::new();
+        store.add(Constraint::Distribute {
+            group: group_id,
+            axis: Axis::Y,
+            gap: 5.0,
+        });
+
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        store.solve(&mut doc, viewport);
+
+        let children = doc.children(group_id);
+        let y0 = doc.get(children[0]).unwrap().get_f32(&AttrKey::Y);
+        let y1 = doc.get(children[1]).unwrap().get_f32(&AttrKey::Y);
+        let y2 = doc.get(children[2]).unwrap().get_f32(&AttrKey::Y);
+
+        assert!((y0 - 10.0).abs() < 0.01, "y0={}", y0);
+        assert!((y1 - 45.0).abs() < 0.01, "y1={} expected 45", y1); // 10 + 30 + 5
+        assert!((y2 - 80.0).abs() < 0.01, "y2={} expected 80", y2); // 45 + 30 + 5
+    }
+
+    #[test]
+    fn pin_with_center_anchor() {
+        let (mut doc, r1, r2) = make_doc_with_rects();
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+
+        let mut store = ConstraintStore::new();
+        store.add(Constraint::Pin {
+            node: r2,
+            to: r1,
+            anchor: Anchor::Center,        // r2's center
+            target_anchor: Anchor::Center,  // r1's center
+            offset: (0.0, 0.0),
+        });
+
+        store.solve(&mut doc, viewport);
+
+        // r1 center = (50, 25), r2 is 80x40
+        // r2 center at (50, 25) means r2 x = 50 - 40 = 10, y = 25 - 20 = 5
+        let r2_x = doc.get(r2).unwrap().get_f32(&AttrKey::X);
+        let r2_y = doc.get(r2).unwrap().get_f32(&AttrKey::Y);
+        assert!((r2_x - 10.0).abs() < 0.01, "r2_x={}", r2_x);
+        assert!((r2_y - 5.0).abs() < 0.01, "r2_y={}", r2_y);
+    }
+
+    #[test]
+    fn multiple_constraints_on_same_node() {
+        let mut doc = Document::new();
+        let root = doc.root;
+
+        let mut anchor = Node::new(SvgTag::Rect);
+        anchor.set_attr(AttrKey::X, AttrValue::F32(100.0));
+        anchor.set_attr(AttrKey::Y, AttrValue::F32(100.0));
+        anchor.set_attr(AttrKey::Width, AttrValue::F32(100.0));
+        anchor.set_attr(AttrKey::Height, AttrValue::F32(100.0));
+        let anchor_id = anchor.id;
+        doc.insert_node(root, 1, anchor);
+
+        let mut target = Node::new(SvgTag::Rect);
+        target.set_attr(AttrKey::Width, AttrValue::F32(200.0));
+        target.set_attr(AttrKey::Height, AttrValue::F32(100.0));
+        let target_id = target.id;
+        doc.insert_node(root, 2, target);
+
+        let mut store = ConstraintStore::new();
+        // First: align X center
+        store.add(Constraint::AlignTo {
+            node: target_id,
+            target: anchor_id,
+            axis: Axis::X,
+            alignment: Alignment::Center,
+        });
+        // Then: lock aspect ratio to 16:9
+        store.add(Constraint::AspectLock {
+            node: target_id,
+            ratio: (16, 9),
+        });
+
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        store.solve(&mut doc, viewport);
+
+        // Align center: anchor center X = 150, target width = 200 → x = 50
+        let target_x = doc.get(target_id).unwrap().get_f32(&AttrKey::X);
+        assert!((target_x - 50.0).abs() < 0.01, "target_x={}", target_x);
+
+        // Aspect lock: width=200, ratio=16:9 → height = 200 / (16/9) = 112.5
+        let target_h = doc.get(target_id).unwrap().get_f32(&AttrKey::Height);
+        assert!((target_h - 112.5).abs() < 0.1, "target_h={}", target_h);
+    }
 }

@@ -155,3 +155,25 @@ export function repeatTemplate(
 export function exportNodeSvg(nodeId: NodeId): string {
   return getWasm().svg_os_export_node_svg(nodeId);
 }
+
+// ── Phase 3: Clone, group/ungroup, node info ────────────────────────────────
+
+/** Clone a node subtree. Returns the new root node ID. */
+export function cloneNode(id: NodeId): NodeId {
+  return getWasm().svg_os_clone_node(id);
+}
+
+/** Group multiple nodes into a new <g> element. Returns the group's ID. */
+export function groupNodes(ids: NodeId[]): NodeId {
+  return getWasm().svg_os_group_nodes(JSON.stringify(ids));
+}
+
+/** Ungroup: move children of a <g> to its parent, remove the <g>. */
+export function ungroupNode(groupId: NodeId): void {
+  getWasm().svg_os_ungroup(groupId);
+}
+
+/** Get info about a node (tag, attrs, children) as a parsed object. */
+export function getNodeInfo(id: NodeId): { tag: string; attrs: Record<string, string>; children: string[]; visible: boolean; locked: boolean; name: string | null } {
+  return JSON.parse(getWasm().svg_os_get_node_info(id));
+}

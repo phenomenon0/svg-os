@@ -340,4 +340,115 @@ mod tests {
         let removes: Vec<_> = ops.iter().filter(|op| matches!(op, SvgDomOp::RemoveElement { .. })).collect();
         assert!(!removes.is_empty());
     }
+
+    #[test]
+    fn diff_detects_child_reorder() {
+        let mut doc = Document::new();
+        let root = doc.root;
+
+        let r1 = Node::new(SvgTag::Rect);
+        let r1_id = r1.id;
+        doc.insert_node(root, 1, r1);
+
+        let r2 = Node::new(SvgTag::Circle);
+        let r2_id = r2.id;
+        doc.insert_node(root, 2, r2);
+
+        let mut engine = DiffEngine::new();
+        engine.full_render(&doc);
+        doc.take_dirty();
+        doc.take_removed();
+
+        // Reorder: swap r1 and r2
+        doc.reorder_children(root, vec![doc.defs, r2_id, r1_id]);
+
+        let ops = engine.diff(&mut doc);
+        let reorders: Vec<_> = ops.iter().filter(|op| matches!(op, SvgDomOp::ReorderChildren { .. })).collect();
+        assert!(!reorders.is_empty());
+    }
+
+    #[test]
+    fn diff_detects_text_content_change() {
+        let mut doc = Document::new();
+        let root = doc.root;
+
+        let mut text = Node::new(SvgTag::Text);
+        text.set_attr(AttrKey::TextContent, AttrValue::Str("Hello".to_string()));
+        let text_id = text.id;
+        doc.insert_node(root, 1, text);
+
+        let mut engine = DiffEngine::new();
+        engine.full_render(&doc);
+        doc.take_dirty();
+
+        doc.set_attr(text_id, AttrKey::TextContent, AttrValue::Str("World".to_string()));
+        let ops = engine.diff(&mut doc);
+
+        let text_ops: Vec<_> = ops.iter().filter(|op| matches!(op, SvgDomOp::SetTextContent { .. })).collect();
+        assert!(!text_ops.is_empty());
+    }
+
+    #[test]
+    fn diff_multiple_attr_changes_in_one_pass() {
+        let mut doc = Document::new();
+        let root = doc.root;
+        let mut rect = Node::new(SvgTag::Rect);
+        rect.set_attr(AttrKey::Fill, AttrValue::Str("#ff0000".to_string()));
+        rect.set_attr(AttrKey::Width, AttrValue::F32(100.0));
+        let rect_id = rect.id;
+        doc.insert_node(root, 1, rect);
+
+        let mut engine = DiffEngine::new();
+        engine.full_render(&doc);
+        doc.take_dirty();
+
+        // Change two attrs at once
+        doc.set_attr(rect_id, AttrKey::Fill, AttrValue::Str("#00ff00".to_string()));
+        doc.set_attr(rect_id, AttrKey::Width, AttrValue::F32(200.0));
+
+        let ops = engine.diff(&mut doc);
+        let sets: Vec<_> = ops.iter().filter(|op| matches!(op, SvgDomOp::SetAttribute { .. })).collect();
+        assert!(sets.len() >= 2, "Expected at least 2 SetAttribute ops, got {}", sets.len());
+    }
+
+    #[test]
+    fn diff_remove_and_readd_same_tag() {
+        let mut doc = Document::new();
+        let root = doc.root;
+        let rect = Node::new(SvgTag::Rect);
+        let rect_id = rect.id;
+        doc.insert_node(root, 1, rect);
+
+        let mut engine = DiffEngine::new();
+        engine.full_render(&doc);
+        doc.take_dirty();
+
+        // Remove
+        doc.remove_subtree(rect_id);
+        let ops = engine.diff(&mut doc);
+        assert!(ops.iter().any(|op| matches!(op, SvgDomOp::RemoveElement { .. })));
+
+        // Add a new rect
+        let rect2 = Node::new(SvgTag::Rect);
+        doc.insert_node(root, 1, rect2);
+        let ops2 = engine.diff(&mut doc);
+        assert!(ops2.iter().any(|op| matches!(op, SvgDomOp::CreateElement { .. })));
+    }
+
+    #[test]
+    fn full_render_after_clear_resets() {
+        let mut doc = Document::new();
+        let root = doc.root;
+        let rect = Node::new(SvgTag::Rect);
+        doc.insert_node(root, 1, rect);
+
+        let mut engine = DiffEngine::new();
+        let _ops1 = engine.full_render(&doc);
+        assert_eq!(engine.last_rendered_count(), 3); // svg + defs + rect
+
+        // Full render again — should reset and re-create everything
+        let ops2 = engine.full_render(&doc);
+        let creates: Vec<_> = ops2.iter().filter(|op| matches!(op, SvgDomOp::CreateElement { .. })).collect();
+        assert_eq!(creates.len(), 3);
+    }
 }

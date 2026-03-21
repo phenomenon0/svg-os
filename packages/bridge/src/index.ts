@@ -22,6 +22,7 @@ export {
   bind, evaluateBindings,
   applyTheme,
   instantiateTemplate, repeatTemplate, exportNodeSvg,
+  cloneNode, groupNodes, ungroupNode, getNodeInfo,
 } from "./api.js";
 
 export { applyOps, resetElementMap, getElement } from "./dom-apply.js";

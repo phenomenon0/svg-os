@@ -477,6 +477,162 @@ pub fn svg_os_export_node_svg(node_id: &str) -> std::result::Result<String, JsVa
     })
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 3 API: Clone, group/ungroup, node info
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Clone a node subtree. Returns the new root node's ID.
+#[wasm_bindgen]
+pub fn svg_os_clone_node(id: &str) -> std::result::Result<String, JsValue> {
+    with_engine(|e| {
+        let node_id = NodeId::from_str(id)
+            .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
+
+        let parent = e.doc.get(node_id)
+            .and_then(|n| n.parent)
+            .ok_or_else(|| JsValue::from_str("Node has no parent"))?;
+
+        let clone_id = e.doc.clone_subtree(node_id)
+            .ok_or_else(|| JsValue::from_str("Clone failed"))?;
+
+        // Reparent clone to same parent as original
+        if let Some(clone_node) = e.doc.get_mut(clone_id) {
+            clone_node.parent = Some(parent);
+        }
+        if let Some(parent_node) = e.doc.get_mut(parent) {
+            if !parent_node.children.contains(&clone_id) {
+                parent_node.children.push(clone_id);
+            }
+        }
+        e.doc.mark_dirty(clone_id);
+        e.doc.mark_dirty(parent);
+
+        Ok(clone_id.to_string())
+    })
+}
+
+/// Group multiple nodes into a new `<g>` element.
+/// ids_json is a JSON array of node ID strings.
+/// Returns the new group's ID.
+#[wasm_bindgen]
+pub fn svg_os_group_nodes(ids_json: &str) -> std::result::Result<String, JsValue> {
+    with_engine(|e| {
+        let ids: Vec<String> = serde_json::from_str(ids_json)
+            .map_err(|err| JsValue::from_str(&format!("Invalid JSON: {}", err)))?;
+
+        if ids.is_empty() {
+            return Err(JsValue::from_str("No nodes to group"));
+        }
+
+        let node_ids: Vec<NodeId> = ids.iter()
+            .filter_map(|s| NodeId::from_str(s))
+            .collect();
+
+        if node_ids.is_empty() {
+            return Err(JsValue::from_str("No valid node IDs"));
+        }
+
+        // Use the parent of the first node as the group's parent
+        let parent = e.doc.get(node_ids[0])
+            .and_then(|n| n.parent)
+            .ok_or_else(|| JsValue::from_str("First node has no parent"))?;
+
+        // Find the minimum index among the nodes to place the group there
+        let min_index = {
+            let parent_children = e.doc.children(parent);
+            node_ids.iter()
+                .filter_map(|id| parent_children.iter().position(|c| c == id))
+                .min()
+                .unwrap_or(0)
+        };
+
+        // Create the group node
+        let group = Node::new(SvgTag::G);
+        let group_id = group.id;
+        e.doc.insert_node(parent, min_index, group);
+
+        // Reparent each node into the group
+        for (i, node_id) in node_ids.iter().enumerate() {
+            e.doc.reparent(*node_id, group_id, i);
+        }
+
+        Ok(group_id.to_string())
+    })
+}
+
+/// Ungroup: move children of a `<g>` to its parent, then remove the `<g>`.
+#[wasm_bindgen]
+pub fn svg_os_ungroup(group_id: &str) -> std::result::Result<(), JsValue> {
+    with_engine(|e| {
+        let gid = NodeId::from_str(group_id)
+            .ok_or_else(|| JsValue::from_str("Invalid group ID"))?;
+
+        let group_node = e.doc.get(gid)
+            .ok_or_else(|| JsValue::from_str("Group not found"))?;
+
+        if group_node.tag != SvgTag::G {
+            return Err(JsValue::from_str("Node is not a <g> element"));
+        }
+
+        let parent = group_node.parent
+            .ok_or_else(|| JsValue::from_str("Group has no parent"))?;
+
+        let children: Vec<NodeId> = group_node.children.clone();
+
+        // Find the group's index in its parent
+        let group_index = e.doc.children(parent)
+            .iter()
+            .position(|c| *c == gid)
+            .unwrap_or(0);
+
+        // Reparent each child to the group's parent, at group's position
+        for (i, child_id) in children.iter().enumerate() {
+            e.doc.reparent(*child_id, parent, group_index + i);
+        }
+
+        // Remove the now-empty group
+        e.doc.remove_subtree(gid);
+
+        Ok(())
+    })
+}
+
+/// Get info about a node as JSON.
+/// Returns: { tag, attrs: { key: value }, children: [id, ...] }
+#[wasm_bindgen]
+pub fn svg_os_get_node_info(id: &str) -> std::result::Result<String, JsValue> {
+    with_engine(|e| {
+        let node_id = NodeId::from_str(id)
+            .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
+
+        let node = e.doc.get(node_id)
+            .ok_or_else(|| JsValue::from_str("Node not found"))?;
+
+        let mut attrs = serde_json::Map::new();
+        for (key, value) in &node.attrs {
+            attrs.insert(
+                key.as_name().to_string(),
+                serde_json::Value::String(value.to_svg_string()),
+            );
+        }
+
+        let children: Vec<serde_json::Value> = node.children.iter()
+            .map(|c| serde_json::Value::String(c.to_string()))
+            .collect();
+
+        let info = serde_json::json!({
+            "tag": node.tag.as_name(),
+            "attrs": attrs,
+            "children": children,
+            "visible": node.visible,
+            "locked": node.locked,
+            "name": node.name,
+        });
+
+        Ok(info.to_string())
+    })
+}
+
 // ── Non-WASM test support ───────────────────────────────────────────────────
 
 #[cfg(not(target_arch = "wasm32"))]
