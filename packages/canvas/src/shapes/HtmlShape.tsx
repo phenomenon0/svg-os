@@ -5,7 +5,7 @@
  * content works: tables, charts, styled divs, iframes, video, forms.
  */
 
-import { HTMLContainer, Rectangle2d, ShapeUtil, T, TLBaseShape, TLHandle } from "tldraw";
+import { HTMLContainer, Rectangle2d, ShapeUtil, T, TLBaseShape, Vec } from "tldraw";
 
 export type HtmlShape = TLBaseShape<
   "html",
@@ -47,11 +47,15 @@ export class HtmlShapeUtil extends ShapeUtil<HtmlShape> {
     });
   }
 
-  override getHandles(shape: HtmlShape): TLHandle[] {
-    return [
-      { id: "input", type: "vertex", index: "a0" as any, x: 0, y: shape.props.h / 2, canSnap: true },
-      { id: "output", type: "vertex", index: "a1" as any, x: shape.props.w, y: shape.props.h / 2, canSnap: true },
-    ];
+  override canBind() { return true; }
+
+  override getHandleSnapGeometry(shape: HtmlShape) {
+    return {
+      points: [
+        new Vec(0, shape.props.h / 2),
+        new Vec(shape.props.w, shape.props.h / 2),
+      ],
+    };
   }
 
   override component(shape: HtmlShape) {

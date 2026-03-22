@@ -13,6 +13,16 @@ import { useEffect, useState } from "react";
 
 const customShapeUtils = [SvgTemplateShapeUtil, HtmlShapeUtil];
 
+// Stable component reference to avoid remounting
+function CanvasOverlays() {
+  return (
+    <>
+      <NodePalette />
+      <ParameterPanel />
+    </>
+  );
+}
+
 export function App() {
   const [wasmLoaded, setWasmLoaded] = useState(false);
 
@@ -35,15 +45,9 @@ export function App() {
       <Tldraw
         shapeUtils={customShapeUtils}
         components={{
-          InFrontOfTheCanvas: () => (
-            <>
-              <NodePalette />
-              <ParameterPanel />
-            </>
-          ),
+          InFrontOfTheCanvas: CanvasOverlays,
         }}
         onMount={(editor) => {
-          // Set dark theme
           editor.user.updateUserPreferences({ colorScheme: "dark" });
         }}
       />

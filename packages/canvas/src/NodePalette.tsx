@@ -17,12 +17,12 @@ interface NodeTypeInfo {
 }
 
 const HTML_NODE_TYPES = [
-  { id: "html-dashboard", name: "Dashboard", variant: "dashboard", w: 300, h: 220, title: "System Monitor", content: "CPU: 42%,Memory: 68%,Disk: 23%,Network: 1.2GB/s" },
-  { id: "html-table", name: "Data Table", variant: "table", w: 300, h: 200, title: "Data Table", content: "Name,Status,Score\nAlice,Active,95\nBob,Idle,82\nCarol,Active,91" },
-  { id: "html-terminal", name: "Terminal", variant: "terminal", w: 320, h: 200, title: "Terminal", content: "" },
-  { id: "html-metric", name: "Metric", variant: "metric", w: 180, h: 120, title: "Total Users", content: "1,247" },
-  { id: "html-markdown", name: "Markdown", variant: "markdown", w: 280, h: 220, title: "Notes", content: "" },
-  { id: "html-card", name: "HTML Card", variant: "card", w: 240, h: 160, title: "Custom Node", content: "" },
+  { id: "html-dashboard", name: "Dashboard", variant: "dashboard", w: 220, h: 160, title: "System Monitor", content: "CPU: 42%,Memory: 68%,Disk: 23%,Network: 1.2GB/s" },
+  { id: "html-table", name: "Data Table", variant: "table", w: 200, h: 150, title: "Data Table", content: "Name,Status,Score\nAlice,Active,95\nBob,Idle,82\nCarol,Active,91" },
+  { id: "html-terminal", name: "Terminal", variant: "terminal", w: 220, h: 150, title: "Terminal", content: "" },
+  { id: "html-metric", name: "Metric", variant: "metric", w: 140, h: 90, title: "Total Users", content: "1,247" },
+  { id: "html-markdown", name: "Markdown", variant: "markdown", w: 200, h: 160, title: "Notes", content: "" },
+  { id: "html-card", name: "HTML Card", variant: "card", w: 180, h: 120, title: "Custom Node", content: "" },
 ];
 
 export function NodePalette() {
@@ -45,14 +45,17 @@ export function NodePalette() {
   }, []);
 
   const handlePlace = useCallback((typeId: string) => {
+    // Offset each placement so nodes don't stack exactly
+    const offset = { x: (Math.random() - 0.5) * 100, y: (Math.random() - 0.5) * 80 };
+
     // Check if it's an HTML node type
     const htmlType = HTML_NODE_TYPES.find(h => h.id === typeId);
     if (htmlType) {
       const center = editor.getViewportScreenCenter();
       editor.createShape({
         type: "html",
-        x: center.x - htmlType.w / 2,
-        y: center.y - htmlType.h / 2,
+        x: center.x - htmlType.w / 2 + offset.x,
+        y: center.y - htmlType.h / 2 + offset.y,
         props: {
           w: htmlType.w,
           h: htmlType.h,
@@ -67,7 +70,7 @@ export function NodePalette() {
     // SVG template shape
     try {
       const nt = getNodeType(typeId) as { template_svg: string; default_width: number; default_height: number };
-      const maxSize = 200;
+      const maxSize = 140;
       const scale = Math.min(maxSize / nt.default_width, maxSize / nt.default_height, 1);
       const w = nt.default_width * scale;
       const h = nt.default_height * scale;
@@ -75,8 +78,8 @@ export function NodePalette() {
 
       editor.createShape({
         type: "svg-template",
-        x: center.x - w / 2,
-        y: center.y - h / 2,
+        x: center.x - w / 2 + offset.x,
+        y: center.y - h / 2 + offset.y,
         props: {
           w,
           h,
