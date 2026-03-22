@@ -96,6 +96,14 @@ impl<'a> Evaluator<'a> {
             }
 
             Expr::Call { name, args } => {
+                // Context functions — zero-arg, read from ctx
+                if name == "row_index" && args.is_empty() {
+                    return Ok(ExprValue::Num(self.ctx.row_index.unwrap_or(0) as f64));
+                }
+                if name == "row_count" && args.is_empty() {
+                    return Ok(ExprValue::Num(self.ctx.row_count.unwrap_or(0) as f64));
+                }
+
                 // Special case: if() is lazy — only evaluate the branch taken
                 if name == "if" && args.len() == 3 {
                     let cond = self.eval(&args[0])?;

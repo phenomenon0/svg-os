@@ -113,7 +113,7 @@ fn constraint_solver_pin() {
         offset: (0.0, 10.0),
     });
 
-    store.solve(&mut doc, Rect::new(0.0, 0.0, 800.0, 600.0));
+    store.solve(&mut doc, Rect::new(0.0, 0.0, 800.0, 600.0), None);
 
     // r1 bottom center = (50 + 50, 50 + 60) = (100, 110)
     // r2 top left should be at (100, 110 + 10) = (100, 120)
@@ -276,7 +276,7 @@ fn constraint_solve_updates_positions() {
         offset: (20.0, 0.0),
     });
 
-    store.solve(&mut doc, Rect::new(0.0, 0.0, 800.0, 600.0));
+    store.solve(&mut doc, Rect::new(0.0, 0.0, 800.0, 600.0), None);
 
     // r1 right edge = 100 + 50 = 150; r2 should be at 150 + 20 = 170
     let r2_x = doc.get(r2_id).unwrap().get_f32(&AttrKey::X);

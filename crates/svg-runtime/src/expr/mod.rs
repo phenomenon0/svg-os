@@ -399,4 +399,93 @@ mod tests {
         assert_eq!(eval_str("$.a || $.b", &data), "true");
         assert_eq!(eval_str("!$.a || $.b", &data), "false");
     }
+
+    // ── Text functions ───────────────────────────────────────────────
+
+    #[test]
+    fn builtin_truncate() {
+        let data = json!({});
+        assert_eq!(eval_str("truncate('Hello World', 5, '...')", &data), "Hello...");
+        assert_eq!(eval_str("truncate('Hi', 10, '...')", &data), "Hi");
+    }
+
+    #[test]
+    fn builtin_pad_start() {
+        let data = json!({});
+        assert_eq!(eval_str("pad_start('42', 5, '0')", &data), "00042");
+        assert_eq!(eval_str("pad_start('hello', 3, '0')", &data), "hello");
+    }
+
+    #[test]
+    fn builtin_replace() {
+        let data = json!({});
+        assert_eq!(eval_str("replace('foo_bar_baz', '_', ' ')", &data), "foo bar baz");
+    }
+
+    #[test]
+    fn builtin_split_join() {
+        let data = json!({});
+        assert_eq!(eval_str("len(split('a,b,c', ','))", &data), "3");
+        assert_eq!(eval_str("join(split('a,b,c', ','), ' ')", &data), "a b c");
+    }
+
+    #[test]
+    fn builtin_trim() {
+        let data = json!({});
+        assert_eq!(eval_str("trim('  hello  ')", &data), "hello");
+    }
+
+    #[test]
+    fn builtin_substr() {
+        let data = json!({});
+        assert_eq!(eval_str("substr('Hello', 1, 3)", &data), "ell");
+        assert_eq!(eval_str("substr('Hi', 0, 10)", &data), "Hi");
+    }
+
+    #[test]
+    fn builtin_contains() {
+        let data = json!({});
+        assert_eq!(eval_str("contains('Hello World', 'World')", &data), "true");
+        assert_eq!(eval_str("contains('Hello', 'xyz')", &data), "false");
+    }
+
+    #[test]
+    fn builtin_starts_with() {
+        let data = json!({});
+        assert_eq!(eval_str("starts_with('Hello', 'Hel')", &data), "true");
+        assert_eq!(eval_str("starts_with('Hello', 'xyz')", &data), "false");
+    }
+
+    // ── Context functions ────────────────────────────────────────────
+
+    #[test]
+    fn context_row_index() {
+        let data = json!({});
+        let compiled = CompiledExpr::parse("row_index()").unwrap();
+        let ctx = EvalContext { data: &data, value: None, row_index: Some(5), row_count: Some(10) };
+        assert_eq!(compiled.eval_to_string(&ctx).unwrap(), "5");
+    }
+
+    #[test]
+    fn context_row_count() {
+        let data = json!({});
+        let compiled = CompiledExpr::parse("row_count()").unwrap();
+        let ctx = EvalContext { data: &data, value: None, row_index: Some(5), row_count: Some(10) };
+        assert_eq!(compiled.eval_to_string(&ctx).unwrap(), "10");
+    }
+
+    #[test]
+    fn alternating_row_color() {
+        let data = json!({});
+        let compiled = CompiledExpr::parse("if(row_index() % 2 == 0, '#f8f8f8', '#ffffff')").unwrap();
+
+        let ctx0 = EvalContext { data: &data, value: None, row_index: Some(0), row_count: Some(4) };
+        assert_eq!(compiled.eval_to_string(&ctx0).unwrap(), "#f8f8f8");
+
+        let ctx1 = EvalContext { data: &data, value: None, row_index: Some(1), row_count: Some(4) };
+        assert_eq!(compiled.eval_to_string(&ctx1).unwrap(), "#ffffff");
+
+        let ctx2 = EvalContext { data: &data, value: None, row_index: Some(2), row_count: Some(4) };
+        assert_eq!(compiled.eval_to_string(&ctx2).unwrap(), "#f8f8f8");
+    }
 }

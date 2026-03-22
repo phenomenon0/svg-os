@@ -8,3 +8,10 @@ license.workspace = true
 svg-doc.workspace = true
 forge-math.workspace = true
 serde.workspace = true
+hyphenation = { version = "0.8", features = ["embed_all"], optional = true }
+unicode-bidi = { version = "0.3", optional = true }
+
+[features]
+default = ["hyphenation", "bidi"]
+hyphenation = ["dep:hyphenation"]
+bidi = ["dep:unicode-bidi"]

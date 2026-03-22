@@ -7,6 +7,13 @@ use std::collections::HashMap;
 
 use crate::expr::{CompiledExpr, EvalContext};
 
+/// Batch rendering context passed to expressions for row_index()/row_count().
+#[derive(Debug, Clone, Copy)]
+pub struct BatchContext {
+    pub row_index: usize,
+    pub row_count: usize,
+}
+
 /// Where data comes from.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DataSource {
@@ -137,10 +144,20 @@ impl BindingEngine {
     }
 
     /// Evaluate all bindings against provided data, updating the document.
-    ///
-    /// `data` is a JSON object where keys match data source identifiers.
-    /// For Static sources, the data is inline in the binding itself.
     pub fn evaluate(&self, doc: &mut Document, data: &Value) {
+        self.evaluate_with_context(doc, data, None);
+    }
+
+    /// Evaluate bindings with optional batch context for row_index()/row_count().
+    pub fn evaluate_with_context(
+        &self,
+        doc: &mut Document,
+        data: &Value,
+        batch: Option<&BatchContext>,
+    ) {
+        let row_index = batch.map(|b| b.row_index);
+        let row_count = batch.map(|b| b.row_count);
+
         for binding in &self.bindings {
             let source_data = match &binding.source {
                 DataSource::Static { value } => value.clone(),
@@ -151,20 +168,18 @@ impl BindingEngine {
                     data.get(url).cloned().unwrap_or(Value::Null)
                 }
                 DataSource::Expression { expr } => {
-                    // Evaluate expression against data context
                     if let Some(compiled) = self.get_or_compile(expr) {
                         let ctx = EvalContext {
                             data,
                             value: None,
-                            row_index: None,
-                            row_count: None,
+                            row_index,
+                            row_count,
                         };
                         match compiled.eval(&ctx) {
                             Ok(val) => json_from_expr_value(&val),
                             Err(_) => resolve_field(data, expr).unwrap_or(Value::Null),
                         }
                     } else {
-                        // Fallback: treat as field path
                         resolve_field(data, expr).unwrap_or(Value::Null)
                     }
                 }
@@ -182,13 +197,12 @@ impl BindingEngine {
 
             for mapping in &binding.mappings {
                 let attr_str = if let Some(expr_str) = &mapping.expr {
-                    // Expression-only path: full access to $ data
                     if let Some(compiled) = self.get_or_compile(expr_str) {
                         let ctx = EvalContext {
                             data: &effective_data,
                             value: None,
-                            row_index: None,
-                            row_count: None,
+                            row_index,
+                            row_count,
                         };
                         match compiled.eval_to_string(&ctx) {
                             Ok(s) => s,
@@ -202,10 +216,11 @@ impl BindingEngine {
                         continue;
                     }
                 } else {
-                    // Legacy path: resolve field, then apply transform
                     let field_value = resolve_field(&effective_data, &mapping.field);
                     match field_value {
-                        Some(value) => self.apply_transform(&effective_data, &value, &mapping.transform),
+                        Some(value) => self.apply_transform_with_ctx(
+                            &effective_data, &value, &mapping.transform, row_index, row_count,
+                        ),
                         None => continue,
                     }
                 };
@@ -217,25 +232,29 @@ impl BindingEngine {
         }
     }
 
-    /// Apply a transform expression to a resolved field value.
-    /// Uses the expression engine with `value` bound to the field value.
-    fn apply_transform(&self, data: &Value, field_value: &Value, transform: &Option<String>) -> String {
+    fn apply_transform_with_ctx(
+        &self,
+        data: &Value,
+        field_value: &Value,
+        transform: &Option<String>,
+        row_index: Option<usize>,
+        row_count: Option<usize>,
+    ) -> String {
         let base = value_to_string(field_value);
 
         match transform {
             None => base,
             Some(expr_str) => {
-                // Try expression engine (handles both new and legacy syntax)
                 if let Some(compiled) = self.get_or_compile(expr_str) {
                     let ctx = EvalContext {
                         data,
                         value: Some(field_value),
-                        row_index: None,
-                        row_count: None,
+                        row_index,
+                        row_count,
                     };
                     match compiled.eval_to_string(&ctx) {
                         Ok(s) => s,
-                        Err(_) => base, // Graceful fallback
+                        Err(_) => base,
                     }
                 } else {
                     base

@@ -14,7 +14,8 @@ pub mod graph_layout;
 pub use graph_layout::*;
 
 use forge_math::Rect;
-use svg_doc::{Document, NodeId, AttrKey, AttrValue};
+use svg_doc::{Document, NodeId, SvgTag, AttrKey, AttrValue};
+use svg_text::TextMeasure;
 use serde::{Serialize, Deserialize};
 
 /// Anchor point on a node's bounding box.
@@ -172,7 +173,7 @@ impl ConstraintStore {
     /// 1. Sort constraints so dependencies are resolved first
     /// 2. Apply each constraint, writing positions/sizes back to the doc
     /// 3. Mark affected nodes as dirty
-    pub fn solve(&self, doc: &mut Document, _viewport: Rect) {
+    pub fn solve(&self, doc: &mut Document, _viewport: Rect, measurer: Option<&dyn TextMeasure>) {
         // Simple topological ordering: constraints with no dependencies first
         let mut ordered: Vec<&Constraint> = Vec::new();
         let mut deferred: Vec<&Constraint> = Vec::new();
@@ -203,8 +204,10 @@ impl ConstraintStore {
                 Constraint::RepeatGrid { template, count, columns, gap } => {
                     self.solve_repeat_grid(doc, *template, *count, *columns, *gap);
                 }
-                Constraint::AutoResize { .. } => {
-                    // Requires text measurement — deferred
+                Constraint::AutoResize { node, axis, min, max, padding } => {
+                    if let Some(m) = measurer {
+                        self.solve_auto_resize(doc, *node, *axis, *min, *max, *padding, m);
+                    }
                 }
             }
         }
@@ -363,6 +366,95 @@ impl ConstraintStore {
             }
         }
     }
+
+    fn solve_auto_resize(
+        &self,
+        doc: &mut Document,
+        node: NodeId,
+        axis: Axis,
+        min: f32,
+        max: f32,
+        padding: f32,
+        measurer: &dyn TextMeasure,
+    ) {
+        let children = doc.children(node);
+        let text_children: Vec<NodeId> = children
+            .iter()
+            .filter(|c| doc.get(**c).map(|n| n.tag == SvgTag::Text).unwrap_or(false))
+            .copied()
+            .collect();
+
+        if text_children.is_empty() {
+            return;
+        }
+
+        let container_rect = self.get_node_rect(doc, node);
+        let mut total_text_height: f32 = 0.0;
+        let mut max_text_width: f32 = 0.0;
+
+        for text_id in &text_children {
+            let runs = svg_doc::extract_text_runs(doc, *text_id);
+            if runs.is_empty() {
+                continue;
+            }
+
+            let available_width = if container_rect.size.x > padding * 2.0 {
+                container_rect.size.x - padding * 2.0
+            } else {
+                f32::INFINITY
+            };
+
+            let config = svg_text::paragraph::ParagraphConfig {
+                max_width: available_width,
+                ..Default::default()
+            };
+            let layout = svg_text::paragraph::layout_paragraphs(&runs, &config, measurer);
+
+            // Emit tspan structure into the document
+            svg_text::emit::emit_layout(&layout, *text_id, doc);
+
+            total_text_height += layout.height;
+            max_text_width = max_text_width.max(layout.width);
+        }
+
+        // Resize container
+        let new_width = (max_text_width + padding * 2.0).clamp(min, max);
+        let new_height = (total_text_height + padding * 2.0).clamp(min, max);
+
+        match axis {
+            Axis::X | Axis::Both => {
+                doc.set_attr(node, AttrKey::Width, AttrValue::F32(new_width));
+            }
+            _ => {}
+        }
+        match axis {
+            Axis::Y | Axis::Both => {
+                doc.set_attr(node, AttrKey::Height, AttrValue::F32(new_height));
+            }
+            _ => {}
+        }
+
+        // Also resize sibling <rect> background to match
+        let children = doc.children(node);
+        for child_id in &children {
+            if let Some(child) = doc.get(*child_id) {
+                if child.tag == SvgTag::Rect {
+                    match axis {
+                        Axis::X | Axis::Both => {
+                            doc.set_attr(*child_id, AttrKey::Width, AttrValue::F32(new_width));
+                        }
+                        _ => {}
+                    }
+                    match axis {
+                        Axis::Y | Axis::Both => {
+                            doc.set_attr(*child_id, AttrKey::Height, AttrValue::F32(new_height));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -407,7 +499,7 @@ mod tests {
             offset: (10.0, 0.0),
         });
 
-        store.solve(&mut doc, viewport);
+        store.solve(&mut doc, viewport, None);
 
         // r2 should be at r1.right + 10 = 110
         let r2_x = doc.get(r2).unwrap().get_f32(&AttrKey::X);
@@ -440,7 +532,7 @@ mod tests {
         });
 
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
-        store.solve(&mut doc, viewport);
+        store.solve(&mut doc, viewport, None);
 
         let children = doc.children(group_id);
         let x0 = doc.get(children[0]).unwrap().get_f32(&AttrKey::X);
@@ -465,7 +557,7 @@ mod tests {
             alignment: Alignment::Center,
         });
 
-        store.solve(&mut doc, viewport);
+        store.solve(&mut doc, viewport, None);
 
         // r1 is 100px wide at x=0, center = 50
         // r2 is 80px wide, so x should be 50 - 40 = 10
@@ -493,7 +585,7 @@ mod tests {
         });
 
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
-        store.solve(&mut doc, viewport);
+        store.solve(&mut doc, viewport, None);
 
         // Width stays 200, height should become 200 / (16/9) = 112.5
         let h = doc.get(rect_id).unwrap().get_f32(&AttrKey::Height);
@@ -522,7 +614,7 @@ mod tests {
         });
 
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
-        store.solve(&mut doc, viewport);
+        store.solve(&mut doc, viewport, None);
 
         // Should have created 3 clones (count - 1) + original = 4 rects total
         let children = doc.children(root);
@@ -557,7 +649,7 @@ mod tests {
         });
 
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
-        store.solve(&mut doc, viewport);
+        store.solve(&mut doc, viewport, None);
 
         let children = doc.children(group_id);
         let y0 = doc.get(children[0]).unwrap().get_f32(&AttrKey::Y);
@@ -583,7 +675,7 @@ mod tests {
             offset: (0.0, 0.0),
         });
 
-        store.solve(&mut doc, viewport);
+        store.solve(&mut doc, viewport, None);
 
         // r1 center = (50, 25), r2 is 80x40
         // r2 center at (50, 25) means r2 x = 50 - 40 = 10, y = 25 - 20 = 5
@@ -627,7 +719,7 @@ mod tests {
         });
 
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
-        store.solve(&mut doc, viewport);
+        store.solve(&mut doc, viewport, None);
 
         // Align center: anchor center X = 150, target width = 200 → x = 50
         let target_x = doc.get(target_id).unwrap().get_f32(&AttrKey::X);
@@ -636,5 +728,130 @@ mod tests {
         // Aspect lock: width=200, ratio=16:9 → height = 200 / (16/9) = 112.5
         let target_h = doc.get(target_id).unwrap().get_f32(&AttrKey::Height);
         assert!((target_h - 112.5).abs() < 0.1, "target_h={}", target_h);
+    }
+
+    #[test]
+    fn auto_resize_fits_text() {
+        let mut doc = Document::new();
+        let root = doc.root;
+
+        // Create group container with rect + text
+        let mut group = Node::new(SvgTag::G);
+        group.set_attr(AttrKey::X, AttrValue::F32(10.0));
+        group.set_attr(AttrKey::Y, AttrValue::F32(10.0));
+        group.set_attr(AttrKey::Width, AttrValue::F32(200.0));
+        group.set_attr(AttrKey::Height, AttrValue::F32(50.0));
+        let group_id = group.id;
+        doc.insert_node(root, 1, group);
+
+        let mut rect = Node::new(SvgTag::Rect);
+        rect.set_attr(AttrKey::Width, AttrValue::F32(200.0));
+        rect.set_attr(AttrKey::Height, AttrValue::F32(50.0));
+        let rect_id = rect.id;
+        doc.insert_node(group_id, 0, rect);
+
+        let mut text = Node::new(SvgTag::Text);
+        text.set_attr(AttrKey::FontSize, AttrValue::F32(10.0));
+        text.set_attr(AttrKey::TextContent, AttrValue::Str("Hello".into()));
+        let text_id = text.id;
+        doc.insert_node(group_id, 1, text);
+
+        // Add AutoResize constraint
+        let mut store = ConstraintStore::new();
+        store.add(Constraint::AutoResize {
+            node: group_id,
+            axis: Axis::Both,
+            min: 20.0,
+            max: 500.0,
+            padding: 10.0,
+        });
+
+        let measurer = svg_text::MockTextMeasure::new(10.0);
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        store.solve(&mut doc, viewport, Some(&measurer));
+
+        // "Hello" = 5 chars * 6.0 = 30.0 width, + 20 padding = 50.0
+        // Height = 10.0 (ascent 8 + descent 2), + 20 padding = 30.0
+        let group_w = doc.get(group_id).unwrap().get_f32(&AttrKey::Width);
+        let group_h = doc.get(group_id).unwrap().get_f32(&AttrKey::Height);
+        assert!((group_w - 50.0).abs() < 1.0, "group_w={}", group_w);
+        assert!((group_h - 30.0).abs() < 1.0, "group_h={}", group_h);
+
+        // Rect should also be resized
+        let rect_w = doc.get(rect_id).unwrap().get_f32(&AttrKey::Width);
+        let rect_h = doc.get(rect_id).unwrap().get_f32(&AttrKey::Height);
+        assert!((rect_w - group_w).abs() < 0.01);
+        assert!((rect_h - group_h).abs() < 0.01);
+
+        // Text node should have tspan children (emitter ran)
+        let text_children = doc.children(text_id);
+        let tspan_count = text_children.iter()
+            .filter(|c| doc.get(**c).map(|n| n.tag == SvgTag::TSpan).unwrap_or(false))
+            .count();
+        assert!(tspan_count >= 1, "Expected tspan children, got {}", tspan_count);
+    }
+
+    #[test]
+    fn auto_resize_respects_min_max() {
+        let mut doc = Document::new();
+        let root = doc.root;
+
+        let mut group = Node::new(SvgTag::G);
+        group.set_attr(AttrKey::Width, AttrValue::F32(200.0));
+        group.set_attr(AttrKey::Height, AttrValue::F32(200.0));
+        let group_id = group.id;
+        doc.insert_node(root, 1, group);
+
+        // Very short text
+        let mut text = Node::new(SvgTag::Text);
+        text.set_attr(AttrKey::FontSize, AttrValue::F32(10.0));
+        text.set_attr(AttrKey::TextContent, AttrValue::Str("Hi".into()));
+        doc.insert_node(group_id, 0, text);
+
+        let mut store = ConstraintStore::new();
+        store.add(Constraint::AutoResize {
+            node: group_id,
+            axis: Axis::Both,
+            min: 100.0,  // min bigger than text needs
+            max: 500.0,
+            padding: 5.0,
+        });
+
+        let measurer = svg_text::MockTextMeasure::new(10.0);
+        store.solve(&mut doc, Rect::new(0.0, 0.0, 800.0, 600.0), Some(&measurer));
+
+        // "Hi" = 2 * 6.0 = 12.0 + 10 padding = 22.0, but min is 100
+        let w = doc.get(group_id).unwrap().get_f32(&AttrKey::Width);
+        let h = doc.get(group_id).unwrap().get_f32(&AttrKey::Height);
+        assert!((w - 100.0).abs() < 0.01, "w={}", w);
+        assert!((h - 100.0).abs() < 0.01, "h={}", h);
+    }
+
+    #[test]
+    fn auto_resize_without_measurer_is_noop() {
+        let mut doc = Document::new();
+        let root = doc.root;
+
+        let mut group = Node::new(SvgTag::G);
+        group.set_attr(AttrKey::Width, AttrValue::F32(200.0));
+        group.set_attr(AttrKey::Height, AttrValue::F32(100.0));
+        let group_id = group.id;
+        doc.insert_node(root, 1, group);
+
+        let mut store = ConstraintStore::new();
+        store.add(Constraint::AutoResize {
+            node: group_id,
+            axis: Axis::Both,
+            min: 20.0,
+            max: 500.0,
+            padding: 10.0,
+        });
+
+        // Solve without measurer — AutoResize should be skipped
+        store.solve(&mut doc, Rect::new(0.0, 0.0, 800.0, 600.0), None);
+
+        // Dimensions unchanged
+        assert_eq!(doc.get(group_id).unwrap().get_f32(&AttrKey::Width), 200.0);
+        assert_eq!(doc.get(group_id).unwrap().get_f32(&AttrKey::Height), 100.0);
     }
 }

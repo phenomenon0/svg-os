@@ -38,7 +38,8 @@ export type Constraint =
   | { Distribute: { group: NodeId; axis: string; gap: number } }
   | { AlignTo: { node: NodeId; target: NodeId; axis: string; alignment: string } }
   | { AspectLock: { node: NodeId; ratio: [number, number] } }
-  | { RepeatGrid: { template: NodeId; count: number; columns: number; gap: [number, number] } };
+  | { RepeatGrid: { template: NodeId; count: number; columns: number; gap: [number, number] } }
+  | { AutoResize: { node: NodeId; axis: string; min: number; max: number; padding: number } };
 
 /** Data binding definition. */
 export interface Binding {

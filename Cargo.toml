@@ -9,6 +9,7 @@ members = [
     "crates/svg-layout",
     "crates/svg-runtime",
     "crates/svg-wasm",
+    "crates/svg-mcp",
 ]
 
 [workspace.package]

@@ -6,6 +6,21 @@
 use svg_doc::{TextStyle, TextRun, TextAlign};
 use crate::TextMeasure;
 
+/// Text overflow behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Overflow {
+    /// Show all text (may exceed max_height).
+    Visible,
+    /// Truncate and append "..." at overflow.
+    Ellipsis,
+    /// Truncate without indicator.
+    Clip,
+}
+
+impl Default for Overflow {
+    fn default() -> Self { Self::Visible }
+}
+
 /// A positioned run within a line.
 #[derive(Debug, Clone)]
 pub struct PositionedRun {
@@ -55,6 +70,12 @@ pub struct ParagraphConfig {
     pub line_height: Option<f32>,
     /// First-line indent.
     pub indent: f32,
+    /// Maximum height before overflow applies. `f32::INFINITY` for no limit.
+    pub max_height: f32,
+    /// Overflow behavior when text exceeds max_height.
+    pub overflow: Overflow,
+    /// Spacing between paragraphs (for layout_paragraphs).
+    pub paragraph_spacing: f32,
 }
 
 impl Default for ParagraphConfig {
@@ -64,6 +85,9 @@ impl Default for ParagraphConfig {
             align: TextAlign::Start,
             line_height: None,
             indent: 0.0,
+            max_height: f32::INFINITY,
+            overflow: Overflow::Visible,
+            paragraph_spacing: 0.0,
         }
     }
 }
@@ -186,7 +210,7 @@ pub fn layout_paragraph(
     let mut y = 0.0;
     let mut max_width: f32 = 0.0;
 
-    for line in &lines {
+    for (line_idx, line) in lines.iter().enumerate() {
         let ascent = line.max_ascent;
         let descent = line.max_descent;
         let height = config.line_height.unwrap_or(ascent + descent);
@@ -194,8 +218,9 @@ pub fn layout_paragraph(
         y += ascent; // baseline = top of line box + ascent
 
         let content_width = line.content_width;
+        let is_last_line = line_idx == lines.len() - 1;
         let align_offset = match config.align {
-            TextAlign::Start => line.indent,
+            TextAlign::Start | TextAlign::Justify => line.indent,
             TextAlign::Middle => (config.max_width - content_width) / 2.0,
             TextAlign::End => {
                 if config.max_width.is_finite() {
@@ -221,6 +246,26 @@ pub fn layout_paragraph(
             x += run.width;
         }
 
+        // Justify: distribute extra space across word gaps (not on last line)
+        if config.align == TextAlign::Justify
+            && !is_last_line
+            && positioned_runs.len() > 1
+            && config.max_width.is_finite()
+        {
+            let extra = config.max_width - content_width;
+            if extra > 0.0 {
+                let gaps = (positioned_runs.len() - 1) as f32;
+                let extra_per_gap = extra / gaps;
+                let mut shift = 0.0;
+                for (i, run) in positioned_runs.iter_mut().enumerate() {
+                    if i > 0 {
+                        shift += extra_per_gap;
+                    }
+                    run.x += shift;
+                }
+            }
+        }
+
         max_width = max_width.max(content_width);
         layout_lines.push(LayoutLine {
             runs: positioned_runs,
@@ -244,11 +289,211 @@ pub fn layout_paragraph(
         layout_lines.iter().map(|l| l.height).sum()
     };
 
-    ParagraphLayout {
+    let mut result = ParagraphLayout {
         lines: layout_lines,
         width: max_width,
         height: total_height,
+    };
+
+    // Apply overflow truncation
+    apply_overflow(&mut result, config, measurer);
+
+    result
+}
+
+/// Apply overflow truncation (ellipsis/clip) if text exceeds max_height.
+fn apply_overflow(layout: &mut ParagraphLayout, config: &ParagraphConfig, measurer: &dyn TextMeasure) {
+    if config.overflow == Overflow::Visible || config.max_height.is_infinite() {
+        return;
     }
+    if layout.height <= config.max_height {
+        return;
+    }
+
+    // Find how many lines fit
+    let mut cumulative = 0.0;
+    let mut visible_count = 0;
+    for line in &layout.lines {
+        cumulative += line.height;
+        if cumulative > config.max_height {
+            break;
+        }
+        visible_count += 1;
+    }
+    visible_count = visible_count.max(1);
+
+    if visible_count >= layout.lines.len() {
+        return;
+    }
+
+    layout.lines.truncate(visible_count);
+
+    if config.overflow == Overflow::Ellipsis {
+        if let Some(last_line) = layout.lines.last_mut() {
+            if let Some(last_run) = last_line.runs.last_mut() {
+                let ellipsis = "\u{2026}"; // "…"
+                let ellipsis_metrics = measurer.measure_run(ellipsis, &last_run.style);
+
+                // Trim last run to make room for ellipsis
+                if config.max_width.is_finite() {
+                    let available = config.max_width - last_run.x - ellipsis_metrics.width;
+                    if available < last_run.width {
+                        let fit = measurer.hit_test_width(&last_run.text, &last_run.style, available.max(0.0));
+                        last_run.text = last_run.text.chars().take(fit).collect();
+                        let trimmed = measurer.measure_run(&last_run.text, &last_run.style);
+                        last_run.width = trimmed.width;
+                    }
+                }
+
+                last_run.text.push_str(ellipsis);
+                last_run.width += ellipsis_metrics.width;
+                last_line.width = last_line.runs.iter()
+                    .map(|r| r.x + r.width)
+                    .fold(0.0f32, f32::max);
+            }
+        }
+    }
+
+    layout.height = layout.lines.iter().map(|l| l.height).sum();
+    layout.width = layout.lines.iter().map(|l| l.width).fold(0.0f32, f32::max);
+}
+
+/// Layout multiple paragraphs (split at `\n` in run content).
+///
+/// Each paragraph is laid out independently, then stacked vertically
+/// with `config.paragraph_spacing` between them.
+pub fn layout_paragraphs(
+    runs: &[TextRun],
+    config: &ParagraphConfig,
+    measurer: &dyn TextMeasure,
+) -> ParagraphLayout {
+    let para_groups = split_runs_into_paragraphs(runs);
+    if para_groups.is_empty() {
+        return ParagraphLayout { lines: vec![], width: 0.0, height: 0.0 };
+    }
+
+    let mut all_lines = Vec::new();
+    let mut y_offset: f32 = 0.0;
+    let mut max_width: f32 = 0.0;
+
+    for (i, para_runs) in para_groups.iter().enumerate() {
+        if i > 0 {
+            y_offset += config.paragraph_spacing;
+        }
+
+        if para_runs.is_empty() {
+            // Empty paragraph (double newline): add spacing
+            let default_height = config.line_height.unwrap_or(16.0);
+            y_offset += default_height;
+            continue;
+        }
+
+        let para_layout = layout_paragraph(para_runs, config, measurer);
+
+        for mut line in para_layout.lines {
+            line.y += y_offset;
+            all_lines.push(line);
+        }
+
+        y_offset += para_layout.height;
+        max_width = max_width.max(para_layout.width);
+    }
+
+    let mut result = ParagraphLayout {
+        lines: all_lines,
+        width: max_width,
+        height: y_offset,
+    };
+
+    // Apply overflow after all paragraphs are laid out
+    apply_overflow(&mut result, config, measurer);
+
+    result
+}
+
+/// Split runs at `\n` boundaries into paragraph groups.
+fn split_runs_into_paragraphs(runs: &[TextRun]) -> Vec<Vec<TextRun>> {
+    let mut paragraphs: Vec<Vec<TextRun>> = vec![vec![]];
+    for run in runs {
+        let parts: Vec<&str> = run.content.split('\n').collect();
+        for (i, part) in parts.iter().enumerate() {
+            if i > 0 {
+                paragraphs.push(vec![]);
+            }
+            if !part.is_empty() {
+                paragraphs.last_mut().unwrap().push(TextRun {
+                    content: part.to_string(),
+                    style: run.style.clone(),
+                });
+            }
+        }
+    }
+    paragraphs
+}
+
+/// Auto-scale font size to fit text within a container.
+///
+/// Binary searches for the largest font size in `[min_size, max_size]`
+/// where the laid-out text fits within `container_width × container_height`.
+/// Returns `(chosen_font_size, layout)`.
+pub fn auto_scale_font(
+    runs: &[TextRun],
+    config: &ParagraphConfig,
+    min_size: f32,
+    max_size: f32,
+    container_width: f32,
+    container_height: f32,
+    measurer: &dyn TextMeasure,
+) -> (f32, ParagraphLayout) {
+    let mut lo = min_size;
+    let mut hi = max_size;
+    let mut best_size = lo;
+    let mut best_layout: Option<ParagraphLayout> = None;
+
+    for _ in 0..20 {
+        if hi - lo < 0.5 {
+            break;
+        }
+        let mid = (lo + hi) / 2.0;
+        let scaled_runs = scale_runs(runs, mid);
+        let mut cfg = config.clone();
+        cfg.max_width = container_width;
+        let layout = layout_paragraphs(&scaled_runs, &cfg, measurer);
+
+        if layout.width <= container_width && layout.height <= container_height {
+            best_size = mid;
+            best_layout = Some(layout);
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+
+    match best_layout {
+        Some(layout) => (best_size, layout),
+        None => {
+            let scaled = scale_runs(runs, min_size);
+            let mut cfg = config.clone();
+            cfg.max_width = container_width;
+            let layout = layout_paragraphs(&scaled, &cfg, measurer);
+            (min_size, layout)
+        }
+    }
+}
+
+fn scale_runs(runs: &[TextRun], target_size: f32) -> Vec<TextRun> {
+    runs.iter().map(|r| {
+        let scale = if r.style.font_size > 0.0 { target_size / r.style.font_size } else { 1.0 };
+        TextRun {
+            content: r.content.clone(),
+            style: TextStyle {
+                font_size: target_size,
+                letter_spacing: r.style.letter_spacing * scale,
+                word_spacing: r.style.word_spacing * scale,
+                ..r.style.clone()
+            },
+        }
+    }).collect()
 }
 
 /// Internal run in a line being built.
@@ -550,5 +795,147 @@ mod tests {
         assert_eq!(layout.lines.len(), 1);
         assert!((layout.lines[0].ascent - 16.0).abs() < 0.01);
         assert!((layout.lines[0].descent - 4.0).abs() < 0.01);
+    }
+
+    // ── Multi-paragraph ──────────────────────────────────────────────
+
+    #[test]
+    fn multi_paragraph_newline() {
+        let m = mock();
+        let runs = vec![run("Hello\nWorld")];
+        let layout = layout_paragraphs(&runs, &ParagraphConfig::default(), &m);
+        assert_eq!(layout.lines.len(), 2);
+        assert_eq!(layout.lines[0].runs[0].text, "Hello");
+        assert_eq!(layout.lines[1].runs[0].text, "World");
+        assert!(layout.lines[1].y > layout.lines[0].y);
+    }
+
+    #[test]
+    fn multi_paragraph_double_newline() {
+        let m = mock();
+        let runs = vec![run("A\n\nB")];
+        let config = ParagraphConfig { paragraph_spacing: 5.0, ..Default::default() };
+        let layout = layout_paragraphs(&runs, &config, &m);
+        assert_eq!(layout.lines.len(), 2);
+        // Should have extra spacing from empty paragraph + paragraph_spacing
+        let gap = layout.lines[1].y - layout.lines[0].y;
+        assert!(gap > 20.0, "gap={} should be > 20 (empty para + spacing)", gap);
+    }
+
+    #[test]
+    fn multi_paragraph_mixed_runs() {
+        let m = mock();
+        let runs = vec![run("Hello\nDear"), run(" World")];
+        let layout = layout_paragraphs(&runs, &ParagraphConfig::default(), &m);
+        // Paragraph 1: "Hello", Paragraph 2: "Dear" + " World" = "Dear World"
+        assert_eq!(layout.lines.len(), 2);
+        assert_eq!(layout.lines[0].runs[0].text, "Hello");
+        // Second paragraph should have "Dear" and "World"
+        let second_line_text: String = layout.lines[1].runs.iter()
+            .map(|r| r.text.as_str()).collect::<Vec<_>>().join(" ");
+        assert!(second_line_text.contains("Dear"));
+        assert!(second_line_text.contains("World"));
+    }
+
+    // ── Justified alignment ──────────────────────────────────────────
+
+    #[test]
+    fn justify_distributes_space() {
+        let m = mock();
+        // "Hello World Foo" wraps at 80px: "Hello World" (66px) on line 1, "Foo" on line 2
+        let runs = vec![run("Hello World Foo")];
+        let config = ParagraphConfig {
+            max_width: 80.0,
+            align: TextAlign::Justify,
+            ..Default::default()
+        };
+        let layout = layout_paragraph(&runs, &config, &m);
+        assert!(layout.lines.len() >= 2);
+
+        // First line (not last): words should be spread to fill 80px
+        let first_line = &layout.lines[0];
+        if first_line.runs.len() > 1 {
+            let last_run = first_line.runs.last().unwrap();
+            let right_edge = last_run.x + last_run.width;
+            assert!((right_edge - 80.0).abs() < 1.0, "right_edge={}", right_edge);
+        }
+
+        // Last line: should be Start-aligned (not justified)
+        let last_line = layout.lines.last().unwrap();
+        assert!((last_line.runs[0].x - 0.0).abs() < 0.01);
+    }
+
+    // ── Ellipsis overflow ────────────────────────────────────────────
+
+    #[test]
+    fn ellipsis_truncates() {
+        let m = mock();
+        // 3 lines of text, max_height fits ~2 lines (line_height=10, max=22)
+        let runs = vec![run("Hello World Foo")];
+        let config = ParagraphConfig {
+            max_width: 40.0,
+            max_height: 22.0,
+            overflow: Overflow::Ellipsis,
+            ..Default::default()
+        };
+        let layout = layout_paragraph(&runs, &config, &m);
+        assert!(layout.lines.len() <= 2, "lines={}", layout.lines.len());
+
+        // Last line should contain ellipsis
+        let last_text = &layout.lines.last().unwrap().runs.last().unwrap().text;
+        assert!(last_text.contains('\u{2026}'), "text='{}' should contain ellipsis", last_text);
+    }
+
+    #[test]
+    fn clip_truncates_without_ellipsis() {
+        let m = mock();
+        let runs = vec![run("Hello World Foo")];
+        let config = ParagraphConfig {
+            max_width: 40.0,
+            max_height: 22.0,
+            overflow: Overflow::Clip,
+            ..Default::default()
+        };
+        let layout = layout_paragraph(&runs, &config, &m);
+        assert!(layout.lines.len() <= 2);
+
+        let last_text = &layout.lines.last().unwrap().runs.last().unwrap().text;
+        assert!(!last_text.contains('\u{2026}'));
+    }
+
+    #[test]
+    fn overflow_visible_no_truncation() {
+        let m = mock();
+        let runs = vec![run("Hello World Foo")];
+        let config = ParagraphConfig {
+            max_width: 40.0,
+            max_height: 5.0, // very small
+            overflow: Overflow::Visible,
+            ..Default::default()
+        };
+        let layout = layout_paragraph(&runs, &config, &m);
+        assert_eq!(layout.lines.len(), 3); // all lines kept
+    }
+
+    // ── Font auto-scaling ────────────────────────────────────────────
+
+    #[test]
+    fn auto_scale_short_text_scales_up() {
+        let m = mock();
+        let runs = vec![run("Hi")];
+        let config = ParagraphConfig::default();
+        let (size, _layout) = auto_scale_font(&runs, &config, 8.0, 48.0, 200.0, 100.0, &m);
+        // Short text in large container: should scale toward max
+        assert!(size > 30.0, "size={} should be > 30", size);
+    }
+
+    #[test]
+    fn auto_scale_long_text_scales_down() {
+        let m = mock();
+        let runs = vec![run("This is a very long sentence that will not fit in a small box")];
+        let config = ParagraphConfig::default();
+        let (size, _layout) = auto_scale_font(&runs, &config, 6.0, 48.0, 50.0, 20.0, &m);
+        // Long text in small container: should scale toward min
+        assert!(size < 12.0, "size={} should be < 12", size);
     }
 }

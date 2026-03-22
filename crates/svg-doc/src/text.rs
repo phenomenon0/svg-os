@@ -37,10 +37,23 @@ pub enum TextAlign {
     Start,
     Middle,
     End,
+    Justify,
 }
 
 impl Default for TextAlign {
     fn default() -> Self { Self::Start }
+}
+
+/// Text direction for bidi support.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TextDirection {
+    Ltr,
+    Rtl,
+    Auto,
+}
+
+impl Default for TextDirection {
+    fn default() -> Self { Self::Ltr }
 }
 
 /// Style properties for a text run. Flat struct passed to TextMeasure.
@@ -54,6 +67,8 @@ pub struct TextStyle {
     pub word_spacing: f32,
     pub decoration: TextDecoration,
     pub baseline_shift: f32,
+    pub direction: TextDirection,
+    pub lang: Option<String>,
 }
 
 impl Default for TextStyle {
@@ -67,6 +82,8 @@ impl Default for TextStyle {
             word_spacing: 0.0,
             decoration: TextDecoration::None,
             baseline_shift: 0.0,
+            direction: TextDirection::Ltr,
+            lang: None,
         }
     }
 }
@@ -143,6 +160,8 @@ impl TextStyle {
             word_spacing,
             decoration,
             baseline_shift,
+            direction: parent.direction,
+            lang: parent.lang.clone(),
         }
     }
 }

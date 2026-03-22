@@ -9,6 +9,9 @@
 //! it takes `&dyn TextMeasure` and never imports WASM or font code.
 
 pub mod paragraph;
+pub mod emit;
+pub mod hyphenate;
+pub mod bidi;
 
 use svg_doc::TextStyle;
 use serde::{Serialize, Deserialize};
@@ -166,6 +169,14 @@ fn js_measure_text(text: &str, font: &str, size: f32) -> [f32; 4] {
             [w, size * 1.2, size * 0.8, size * 0.2]
         }
     })
+}
+
+/// Register a text measurement callback from the WASM bridge.
+#[cfg(target_arch = "wasm32")]
+pub fn set_text_measure_fn(f: Box<dyn Fn(&str, &str, f32) -> [f32; 4]>) {
+    TEXT_MEASURE_FN.with(|cell| {
+        *cell.borrow_mut() = Some(f);
+    });
 }
 
 #[cfg(test)]

@@ -407,7 +407,8 @@ pub fn svg_os_add_constraint(constraint_json: &str) -> std::result::Result<(), J
 pub fn svg_os_solve_constraints() -> Result<(), JsValue> {
     with_engine(|e| {
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
-        e.constraints.solve(&mut e.doc, viewport);
+        let measurer = svg_text::BrowserTextMeasure;
+        e.constraints.solve(&mut e.doc, viewport, Some(&measurer));
         e.connectors.update_paths(&mut e.doc);
     })
 }
@@ -920,6 +921,56 @@ pub fn svg_os_eval_expr(expr: &str, data_json: &str) -> Result<String, JsValue> 
 
     compiled.eval_to_string(&ctx)
         .map_err(|err| JsValue::from_str(&format!("Eval error: {}", err)))
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Text measurement registration
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Register a JavaScript text measurement callback.
+/// The callback should accept (text: string, font: string, size: number)
+/// and return a Float32Array of [width, height, ascent, descent].
+///
+/// Example JS:
+/// ```js
+/// const canvas = document.createElement('canvas');
+/// const ctx = canvas.getContext('2d');
+/// registerTextMeasurer((text, font, size) => {
+///   ctx.font = `${size}px ${font}`;
+///   const m = ctx.measureText(text);
+///   return new Float32Array([
+///     m.width,
+///     size * 1.2,
+///     m.actualBoundingBoxAscent || size * 0.8,
+///     m.actualBoundingBoxDescent || size * 0.2,
+///   ]);
+/// });
+/// ```
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn svg_os_register_text_measurer(callback: js_sys::Function) {
+    let measure_fn = Box::new(move |text: &str, font: &str, size: f32| -> [f32; 4] {
+        let this = JsValue::NULL;
+        let result = callback.call3(
+            &this,
+            &JsValue::from_str(text),
+            &JsValue::from_str(font),
+            &JsValue::from_f64(size as f64),
+        );
+        match result {
+            Ok(val) => {
+                let arr = js_sys::Float32Array::new(&val);
+                let mut out = [0.0f32; 4];
+                arr.copy_to(&mut out);
+                out
+            }
+            Err(_) => {
+                let w = text.len() as f32 * size * 0.6;
+                [w, size * 1.2, size * 0.8, size * 0.2]
+            }
+        }
+    });
+    svg_text::set_text_measure_fn(measure_fn);
 }
 
 // ── Non-WASM test support ───────────────────────────────────────────────────

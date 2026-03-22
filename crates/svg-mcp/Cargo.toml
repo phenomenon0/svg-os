@@ -1,28 +1,25 @@
 [package]
-name = "svg-wasm"
+name = "svg-mcp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false
-
-[lib]
-crate-type = ["cdylib", "rlib"]
+[[bin]]
+name = "svg-mcp"
+path = "src/main.rs"
 
 [dependencies]
-svg-geom.workspace = true
 svg-doc.workspace = true
+svg-runtime.workspace = true
 svg-render.workspace = true
 svg-text.workspace = true
 svg-effects.workspace = true
 svg-layout.workspace = true
-svg-runtime.workspace = true
 forge-math.workspace = true
-forge-core.workspace = true
-wasm-bindgen.workspace = true
-js-sys = "0.3"
-serde.workspace = true
+serde = { workspace = true }
 serde_json.workspace = true
 log.workspace = true
-uuid.workspace = true
+quick-xml.workspace = true
+rmcp = { version = "1.2", features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["full"] }
+schemars = "1.2"

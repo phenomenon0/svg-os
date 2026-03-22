@@ -20,4 +20,4 @@ pub use document::Document;
 pub use command::{SvgCommand, CommandError};
 pub use serialize::doc_to_svg_string;
 pub use parse::doc_from_svg_string;
-pub use text::{TextRun, TextStyle, TextAlign, FontStyle as TextFontStyle, TextDecoration, extract_text_runs};
+pub use text::{TextRun, TextStyle, TextAlign, TextDirection, FontStyle as TextFontStyle, TextDecoration, extract_text_runs};
