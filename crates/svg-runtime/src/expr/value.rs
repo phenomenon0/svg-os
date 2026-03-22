@@ -86,6 +86,21 @@ impl ExprValue {
     pub fn is_null(&self) -> bool {
         matches!(self, Self::Null)
     }
+
+    /// Convert to serde_json::Value.
+    pub fn to_json(&self) -> JsonValue {
+        match self {
+            Self::Num(n) => serde_json::Number::from_f64(*n)
+                .map(JsonValue::Number)
+                .unwrap_or(JsonValue::Null),
+            Self::Str(s) => JsonValue::String(s.clone()),
+            Self::Bool(b) => JsonValue::Bool(*b),
+            Self::Null => JsonValue::Null,
+            Self::Array(items) => {
+                JsonValue::Array(items.iter().map(|v| v.to_json()).collect())
+            }
+        }
+    }
 }
 
 impl PartialEq for ExprValue {

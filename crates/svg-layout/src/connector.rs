@@ -112,7 +112,7 @@ impl ConnectorStore {
     /// Upstream nodes (no incoming data-flow connectors) come first.
     /// Nodes not in the graph are appended at the end.
     pub fn topological_order(&self, all_nodes: &[NodeId]) -> Vec<NodeId> {
-        use std::collections::{HashMap, VecDeque};
+        use std::collections::{HashMap, HashSet, VecDeque};
 
         // Build adjacency and in-degree from data-flow connectors only
         let mut in_degree: HashMap<NodeId, usize> = HashMap::new();
@@ -138,8 +138,10 @@ impl ConnectorStore {
             .collect();
 
         let mut result = Vec::with_capacity(all_nodes.len());
+        let mut in_result: HashSet<NodeId> = HashSet::with_capacity(all_nodes.len());
         while let Some(node) = queue.pop_front() {
             result.push(node);
+            in_result.insert(node);
             if let Some(neighbors) = adj.get(&node) {
                 for next in neighbors {
                     if let Some(deg) = in_degree.get_mut(next) {
@@ -154,7 +156,7 @@ impl ConnectorStore {
 
         // Append any nodes not reached (cycles or disconnected)
         for nid in all_nodes {
-            if !result.contains(nid) {
+            if !in_result.contains(nid) {
                 result.push(*nid);
             }
         }

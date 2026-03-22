@@ -47,7 +47,8 @@ pub fn batch_render(
     let mut results = Vec::with_capacity(row_count);
     for (i, row) in rows.iter().enumerate() {
         let batch = BatchContext { row_index: i, row_count };
-        let svg = resolve_svg_bindings(template_svg, row, Some(&batch))?;
+        let bound_svg = resolve_svg_bindings(template_svg, row, Some(&batch))?;
+        let svg = layout_text_in_svg(&bound_svg)?;
         results.push(svg);
     }
     Ok(results)
@@ -99,7 +100,7 @@ pub fn eval_expression(
     let result = compiled.eval(&ctx)
         .map_err(|e| format!("Eval error: {}", e))?;
 
-    Ok(expr_value_to_json(&result))
+    Ok(result.to_json())
 }
 
 /// Describe what bindings a template expects.
@@ -136,7 +137,6 @@ fn resolve_svg_bindings(
                 current_depth += 1;
                 let mut elem = BytesStart::from(e.name());
                 let mut text_bind: Option<String> = None;
-                let mut skip_attrs: Vec<Vec<u8>> = Vec::new();
 
                 // Process attributes, looking for data-bind-*
                 for attr_result in e.attributes() {
@@ -147,26 +147,21 @@ fn resolve_svg_bindings(
                     if key == "data-bind" {
                         // Text content binding
                         text_bind = resolve_field_str(data, &val);
-                        skip_attrs.push(attr.key.as_ref().to_vec());
                     } else if key == "data-bind-expr" {
                         // Expression for text content
                         text_bind = eval_expr_str(&val, data, batch);
-                        skip_attrs.push(attr.key.as_ref().to_vec());
                     } else if key == "data-bind-fill" {
                         if let Some(v) = resolve_field_str(data, &val) {
                             elem.push_attribute(("fill", v.as_str()));
                         }
-                        skip_attrs.push(attr.key.as_ref().to_vec());
                     } else if key == "data-bind-stop" {
                         if let Some(v) = resolve_field_str(data, &val) {
                             elem.push_attribute(("stop-color", v.as_str()));
                         }
-                        skip_attrs.push(attr.key.as_ref().to_vec());
                     } else if let Some(target_attr) = key.strip_prefix("data-bind-attr-") {
                         if let Some(v) = resolve_field_str(data, &val) {
                             elem.push_attribute((target_attr, v.as_str()));
                         }
-                        skip_attrs.push(attr.key.as_ref().to_vec());
                     } else {
                         elem.push_attribute(attr);
                     }
@@ -354,21 +349,6 @@ fn eval_expr_str(expr: &str, data: &serde_json::Value, batch: Option<&BatchConte
         row_count: batch.map(|b| b.row_count),
     };
     compiled.eval_to_string(&ctx).ok()
-}
-
-fn expr_value_to_json(val: &svg_runtime::ExprValue) -> serde_json::Value {
-    use svg_runtime::ExprValue;
-    match val {
-        ExprValue::Num(n) => serde_json::Number::from_f64(*n)
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null),
-        ExprValue::Str(s) => serde_json::Value::String(s.clone()),
-        ExprValue::Bool(b) => serde_json::Value::Bool(*b),
-        ExprValue::Null => serde_json::Value::Null,
-        ExprValue::Array(items) => {
-            serde_json::Value::Array(items.iter().map(expr_value_to_json).collect())
-        }
-    }
 }
 
 /// Post-process SVG to run text layout on <text> elements.

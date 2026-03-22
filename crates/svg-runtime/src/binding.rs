@@ -69,7 +69,6 @@ pub struct Binding {
 pub struct BindingEngine {
     bindings: Vec<Binding>,
     /// Cache of compiled expressions keyed by source string.
-    #[allow(dead_code)]
     expr_cache: HashMap<String, CompiledExpr>,
     /// Computed data per node (populated by evaluate_with_flow).
     node_data: HashMap<NodeId, Value>,
@@ -179,7 +178,7 @@ impl BindingEngine {
                             row_count,
                         };
                         match compiled.eval(&ctx) {
-                            Ok(val) => json_from_expr_value(&val),
+                            Ok(val) => val.to_json(),
                             Err(_) => resolve_field(data, expr).unwrap_or(Value::Null),
                         }
                     } else {
@@ -299,15 +298,19 @@ impl BindingEngine {
         // Topological sort
         let order = connectors.topological_order(&bound_nodes);
 
-        // Clone bindings to avoid borrow issues
-        let bindings = self.bindings.clone();
+        // Build a map from NodeId to binding index to avoid cloning all bindings
+        let binding_index: HashMap<NodeId, usize> = self.bindings.iter()
+            .enumerate()
+            .map(|(i, b)| (b.target, i))
+            .collect();
 
         for node_id in &order {
-            // Find binding for this node
-            let binding = match bindings.iter().find(|b| b.target == *node_id) {
-                Some(b) => b,
+            // Find binding for this node; clone individual binding to release borrow on self
+            let bind_idx = match binding_index.get(node_id) {
+                Some(i) => *i,
                 None => continue,
             };
+            let binding = self.bindings[bind_idx].clone();
 
             // Gather upstream data from incoming connectors
             let incoming = connectors.incoming(*node_id);
@@ -334,7 +337,7 @@ impl BindingEngine {
                                 row_count: None,
                             };
                             compiled.eval(&ctx)
-                                .map(|v| json_from_expr_value(&v))
+                                .map(|v| v.to_json())
                                 .unwrap_or(Value::Null)
                         } else {
                             Value::Null
@@ -364,7 +367,7 @@ impl BindingEngine {
                             row_count: None,
                         };
                         compiled.eval(&ctx)
-                            .map(|v| json_from_expr_value(&v))
+                            .map(|v| v.to_json())
                             .unwrap_or(Value::Null)
                     } else {
                         resolve_field(external_data, expr).unwrap_or(Value::Null)
@@ -375,7 +378,7 @@ impl BindingEngine {
             let effective_data = if own_data.is_null() {
                 binding.fallback.clone().unwrap_or(Value::Null)
             } else {
-                own_data.clone()
+                own_data
             };
 
             // Build merged context: own data + _input from upstream
@@ -403,9 +406,13 @@ impl BindingEngine {
                             };
                             match compiled.eval_to_string(&ctx) {
                                 Ok(s) => s,
-                                Err(_) => continue,
+                                Err(e) => {
+                                    log::warn!("Expression error in '{}': {}", expr_str, e);
+                                    continue;
+                                }
                             }
                         } else {
+                            log::warn!("Failed to parse expression: {}", expr_str);
                             continue;
                         }
                     } else {
@@ -474,32 +481,6 @@ fn value_to_string(value: &Value) -> String {
     }
 }
 
-fn json_from_expr_value(val: &crate::expr::ExprValue) -> Value {
-    use crate::expr::ExprValue;
-    match val {
-        ExprValue::Num(n) => {
-            serde_json::Number::from_f64(*n)
-                .map(Value::Number)
-                .unwrap_or(Value::Null)
-        }
-        ExprValue::Str(s) => Value::String(s.clone()),
-        ExprValue::Bool(b) => Value::Bool(*b),
-        ExprValue::Null => Value::Null,
-        ExprValue::Array(items) => {
-            Value::Array(items.iter().map(json_from_expr_value).collect())
-        }
-    }
-}
-
-// Kept for potential future use but currently all formatting goes through expr engine
-#[allow(dead_code)]
-fn format_f64(v: f64) -> String {
-    if v == v.floor() && v.abs() < 1e9 {
-        format!("{}", v as i64)
-    } else {
-        format!("{:.4}", v).trim_end_matches('0').trim_end_matches('.').to_string()
-    }
-}
 
 #[cfg(test)]
 mod tests {

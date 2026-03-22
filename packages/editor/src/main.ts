@@ -44,6 +44,10 @@ let isConnecting = false;
 let connectorSource: { nodeId: string; portName: string; pt: { x: number; y: number } } | null = null;
 let arrowheadCreated = false;
 
+// Cached DOM refs for ensureCanvasGrid (populated on first call)
+let cachedBg: SVGRectElement | null = null;
+let cachedGrid: SVGRectElement | null = null;
+
 const container = document.getElementById("canvas-container")!;
 const statusText = document.getElementById("status-text")!;
 const statusNodes = document.getElementById("status-nodes")!;
@@ -191,9 +195,9 @@ function applyViewTransform() {
 }
 
 function ensureCanvasGrid(svg: SVGSVGElement, vbX: number, vbY: number, vbW: number, vbH: number) {
-  // Add/update a background rect + grid that covers the viewBox
-  let bg = svg.querySelector("[data-canvas-bg]") as SVGRectElement | null;
-  let grid = svg.querySelector("[data-canvas-grid]") as SVGRectElement | null;
+  // Use cached refs; fall back to querySelector if invalidated
+  let bg = cachedBg && cachedBg.isConnected ? cachedBg : svg.querySelector("[data-canvas-bg]") as SVGRectElement | null;
+  let grid = cachedGrid && cachedGrid.isConnected ? cachedGrid : svg.querySelector("[data-canvas-grid]") as SVGRectElement | null;
 
   if (!bg) {
     // Create grid pattern in defs
@@ -258,6 +262,10 @@ function ensureCanvasGrid(svg: SVGSVGElement, vbX: number, vbY: number, vbW: num
     grid.setAttribute("fill", "url(#canvas-grid-pattern)");
     svg.insertBefore(grid, bg.nextSibling);
   }
+
+  // Cache refs for subsequent calls
+  cachedBg = bg;
+  cachedGrid = grid;
 
   // Update bg and grid to cover current viewBox with margin
   const margin = 200;
