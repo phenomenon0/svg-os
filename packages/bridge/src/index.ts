@@ -26,6 +26,8 @@ export {
   addPorts, addDefaultPorts, getPorts,
   addConnector, removeConnector, updateConnectors, getConnectors,
   autoLayout, generateDiagram,
+  registerNodeType, listNodeTypes, getNodeType, instantiateNodeType,
+  evaluateDataFlow, getNodeData,
 } from "./api.js";
 
 export { applyOps, resetElementMap, getElement } from "./dom-apply.js";

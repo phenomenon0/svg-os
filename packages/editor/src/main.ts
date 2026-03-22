@@ -13,8 +13,10 @@ import {
   cloneNode, groupNodes, ungroupNode,
   addDefaultPorts, getPorts, addConnector, updateConnectors, autoLayout,
   generateDiagram, getNodeInfo,
+  instantiateNodeType,
 } from "@svg-os/bridge";
 import type { Binding, Theme, Port } from "@svg-os/bridge";
+import { initPalette, getPlacingType, placeNode, cancelPlacing } from "./node-palette.js";
 
 // ── State ───────────────────────────────────────────────────────────────────
 
@@ -66,6 +68,7 @@ async function init() {
     setupPanelTabs();
     setupDataPanel();
     updateUndoRedoButtons();
+    setupNodePalette();
 
     // Seed demo content when loaded with ?demo=true
     if (new URLSearchParams(window.location.search).has("demo")) {
@@ -273,6 +276,12 @@ function setupKeyboard() {
     const tag = (e.target as HTMLElement)?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
+    if (e.key === "Escape") {
+      cancelPlacing();
+      container.style.cursor = "";
+      return;
+    }
+
     if (!e.ctrlKey && !e.metaKey) {
       switch (e.key.toLowerCase()) {
         case "v": setTool("select"); return;
@@ -479,6 +488,16 @@ function onWheel(e: WheelEvent) {
 
 function onPointerDown(e: PointerEvent) {
   const pt = getSvgPoint(e.clientX, e.clientY);
+
+  // Node palette placement mode
+  if (getPlacingType() && e.button === 0) {
+    const nodeId = placeNode(pt.x, pt.y);
+    if (nodeId) {
+      fullRerender();
+      selectNode(nodeId);
+    }
+    return;
+  }
 
   // Middle mouse to pan
   if (e.button === 1) {
@@ -1324,6 +1343,26 @@ function renderBindingsList() {
   const nb = selectedNodeId ? activeBindings.filter((b) => b.nodeId === selectedNodeId) : [];
   if (nb.length === 0) { list.innerHTML = '<p style="font-size:11px;color:#475569">No bindings on this node</p>'; return; }
   list.innerHTML = nb.map((b) => `<div class="binding-item"><span class="field">${b.field}</span><span class="arrow">&rarr;</span><span class="attr">${b.attr}</span></div>`).join("");
+}
+
+// ── Node Palette ─────────────────────────────────────────────────────────────
+
+function setupNodePalette() {
+  const paletteEl = document.getElementById("node-palette");
+  if (!paletteEl) return;
+  initPalette(paletteEl, {
+    onPlaceNode: (_typeId, _x, _y) => {
+      // Handled in onPointerDown via getPlacingType()
+    },
+    onModeChange: (mode) => {
+      container.style.cursor = mode === "placing" ? "crosshair" : "";
+      if (mode === "placing") {
+        currentTool = "select";
+        document.querySelectorAll(".toolbar button").forEach(b => b.classList.remove("active"));
+        document.getElementById("tool-select")?.classList.add("active");
+      }
+    },
+  });
 }
 
 // ── Start ───────────────────────────────────────────────────────────────────

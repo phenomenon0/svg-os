@@ -231,3 +231,49 @@ export function generateDiagram(
 ): { nodeMap: Record<string, string>; connectorCount: number } {
   return JSON.parse(getWasm().svg_os_generate_diagram(JSON.stringify(data), JSON.stringify(config ?? {})));
 }
+
+// ── Node Type Registry ───────────────────────────────────────────────────────
+
+export function registerNodeType(def: {
+  id: string;
+  name: string;
+  category?: string;
+  template_svg: string;
+  icon?: string;
+}): void {
+  getWasm().svg_os_register_node_type(JSON.stringify(def));
+}
+
+export function listNodeTypes(): Array<{
+  id: string;
+  name: string;
+  category: string;
+  slots: Array<{ field: string; bind_type: string; target_attr: string }>;
+  default_width: number;
+  default_height: number;
+}> {
+  return JSON.parse(getWasm().svg_os_list_node_types());
+}
+
+export function getNodeType(typeId: string): unknown {
+  return JSON.parse(getWasm().svg_os_get_node_type(typeId));
+}
+
+export function instantiateNodeType(
+  typeId: string,
+  x: number,
+  y: number,
+  data?: Record<string, unknown>,
+): string {
+  return getWasm().svg_os_instantiate_node_type(typeId, x, y, JSON.stringify(data ?? {}));
+}
+
+// ── Data Flow ────────────────────────────────────────────────────────────────
+
+export function evaluateDataFlow(data?: Record<string, unknown>): void {
+  getWasm().svg_os_evaluate_data_flow(JSON.stringify(data ?? {}));
+}
+
+export function getNodeData(nodeId: string): unknown {
+  return JSON.parse(getWasm().svg_os_get_node_data(nodeId));
+}

@@ -776,6 +776,7 @@ version = "0.1.0"
 dependencies = [
  "forge-math",
  "log",
+ "quick-xml",
  "serde",
  "serde_json",
  "svg-doc",
