@@ -22,6 +22,7 @@ struct Engine {
     constraints: ConstraintStore,
     connectors: ConnectorStore,
     bindings: BindingEngine,
+    node_types: svg_runtime::NodeTypeRegistry,
     undo_stack: Vec<svg_doc::SvgCommand>,
     redo_stack: Vec<svg_doc::SvgCommand>,
 }
@@ -35,6 +36,7 @@ impl Engine {
             constraints: ConstraintStore::new(),
             connectors: ConnectorStore::new(),
             bindings: BindingEngine::new(),
+            node_types: svg_runtime::NodeTypeRegistry::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
         }
@@ -947,6 +949,100 @@ pub fn svg_os_get_node_info(id: &str) -> std::result::Result<String, JsValue> {
         });
 
         Ok(info.to_string())
+    })
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Node Type Registry
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Register a node type from JSON. Auto-detects slots from the template SVG.
+/// JSON: { id, name, category, template_svg, ?icon }
+#[wasm_bindgen]
+pub fn svg_os_register_node_type(type_json: &str) -> Result<(), JsValue> {
+    try_with_engine(|e| {
+        let val: serde_json::Value = serde_json::from_str(type_json)
+            .map_err(|err| JsValue::from_str(&format!("Invalid JSON: {}", err)))?;
+
+        let id = val.get("id").and_then(|v| v.as_str())
+            .ok_or_else(|| JsValue::from_str("Missing 'id'"))?;
+        let name = val.get("name").and_then(|v| v.as_str())
+            .ok_or_else(|| JsValue::from_str("Missing 'name'"))?;
+        let category = val.get("category").and_then(|v| v.as_str()).unwrap_or("custom");
+        let svg = val.get("template_svg").and_then(|v| v.as_str())
+            .ok_or_else(|| JsValue::from_str("Missing 'template_svg'"))?;
+
+        let nt = svg_runtime::NodeTypeRegistry::from_template_svg(id, name, category, svg);
+        e.node_types.register(nt);
+        Ok(())
+    })
+}
+
+/// List all registered node types as JSON array (lightweight, no SVG payload).
+#[wasm_bindgen]
+pub fn svg_os_list_node_types() -> Result<String, JsValue> {
+    with_engine(|e| {
+        let types = e.node_types.list();
+        serde_json::to_string(&types).unwrap_or_else(|_| "[]".into())
+    })
+}
+
+/// Get full node type definition by ID (includes template SVG).
+#[wasm_bindgen]
+pub fn svg_os_get_node_type(type_id: &str) -> Result<String, JsValue> {
+    try_with_engine(|e| {
+        match e.node_types.get(type_id) {
+            Some(nt) => serde_json::to_string(nt)
+                .map_err(|err| JsValue::from_str(&format!("JSON error: {}", err))),
+            None => Err(JsValue::from_str(&format!("Node type not found: {}", type_id))),
+        }
+    })
+}
+
+/// Instantiate a node type on the canvas at (x, y) with optional initial data.
+/// Returns the new group node ID.
+#[wasm_bindgen]
+pub fn svg_os_instantiate_node_type(
+    type_id: &str,
+    x: f32,
+    y: f32,
+    data_json: &str,
+) -> Result<String, JsValue> {
+    try_with_engine(|e| {
+        let group_id = e.node_types.instantiate(type_id, &mut e.doc, x, y)
+            .ok_or_else(|| JsValue::from_str(&format!("Node type not found: {}", type_id)))?;
+
+        // If data provided, evaluate bindings for this node
+        if !data_json.is_empty() && data_json != "{}" {
+            if let Ok(data) = serde_json::from_str::<serde_json::Value>(data_json) {
+                // Set data-bind attributes on child elements
+                // (The node type's slots define what fields map to what attributes)
+                if let Some(nt) = e.node_types.get(type_id) {
+                    for slot in &nt.slots {
+                        if let Some(val) = data.get(&slot.field) {
+                            let val_str = match val {
+                                serde_json::Value::String(s) => s.clone(),
+                                other => other.to_string(),
+                            };
+                            // Walk children to find elements with matching data-bind
+                            let children = e.doc.children(group_id);
+                            for child_id in &children {
+                                // Simple: set on all children that are text elements for text slots
+                                if slot.bind_type == "text" {
+                                    if let Some(child) = e.doc.get(*child_id) {
+                                        if child.tag == svg_doc::SvgTag::Text {
+                                            e.doc.set_attr(*child_id, AttrKey::TextContent, AttrValue::Str(val_str.clone()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(group_id.to_string())
     })
 }
 
