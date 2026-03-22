@@ -14,6 +14,7 @@ import {
   addDefaultPorts, getPorts, addConnector, updateConnectors, autoLayout,
   generateDiagram, getNodeInfo,
   instantiateNodeType,
+  evaluateDataFlow,
 } from "@svg-os/bridge";
 import type { Binding, Theme, Port } from "@svg-os/bridge";
 import { initPalette, getPlacingType, placeNode, cancelPlacing } from "./node-palette.js";
@@ -171,8 +172,19 @@ function fullRerender() {
 function applyViewTransform() {
   const svg = container.querySelector("svg") as SVGSVGElement | null;
   if (!svg) return;
-  svg.style.transform = `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale})`;
-  svg.style.transformOrigin = "0 0";
+
+  // Infinite canvas: use viewBox for pan/zoom instead of CSS transform
+  const rect = container.getBoundingClientRect();
+  const vbW = rect.width / viewTransform.scale;
+  const vbH = rect.height / viewTransform.scale;
+  const vbX = -viewTransform.x / viewTransform.scale;
+  const vbY = -viewTransform.y / viewTransform.scale;
+  svg.setAttribute("viewBox", `${vbX} ${vbY} ${vbW} ${vbH}`);
+  svg.setAttribute("width", `${rect.width}`);
+  svg.setAttribute("height", `${rect.height}`);
+  svg.style.transform = "";
+  svg.style.width = "100%";
+  svg.style.height = "100%";
 }
 
 function updateStatus() {
@@ -674,7 +686,10 @@ function onPointerUp(e: PointerEvent) {
         from: [connectorSource.nodeId, connectorSource.portName],
         to: [hit.nodeId, hit.port.name],
         routing: "Straight",
+        dataFlow: "PassThrough",
       });
+      // Evaluate data flow so downstream nodes update
+      try { evaluateDataFlow(); } catch { /* ignore if no bindings */ }
       render();
     }
     isConnecting = false;

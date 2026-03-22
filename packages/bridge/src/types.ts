@@ -82,6 +82,7 @@ export interface ConnectorDef {
   from: [NodeId, string]; // [nodeId, portName]
   to: [NodeId, string];
   routing: ConnectorRouting;
+  dataFlow?: DataFlow;
 }
 
 /** Connector info returned from getConnectors. */
