@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SVG OS — A Programmable Document Engine</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #08080d;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── Hero ──────────────────────────────────────────────── */
+    .hero {
+      padding: 80px 24px 48px;
+      text-align: center;
+      max-width: 700px;
+    }
+
+    .hero .badge {
+      display: inline-block;
+      padding: 6px 14px;
+      background: #6366f110;
+      border: 1px solid #6366f130;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #818cf8;
+      letter-spacing: 0.04em;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      font-size: 48px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 16px;
+    }
+
+    .hero h1 .accent {
+      background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      font-size: 17px;
+      color: #94a3b8;
+      line-height: 1.6;
+      max-width: 540px;
+      margin: 0 auto;
+    }
+
+    /* ── Cards Grid ───────────────────────────────────────── */
+    .demos {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      max-width: 960px;
+      padding: 0 24px 80px;
+      width: 100%;
+    }
+
+    @media (max-width: 768px) {
+      .demos { grid-template-columns: 1fr; max-width: 420px; }
+      .hero h1 { font-size: 32px; }
+    }
+
+    .demo-card {
+      background: #111118;
+      border: 1px solid #1e1e2e;
+      border-radius: 16px;
+      padding: 32px 28px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      transition: all 0.3s;
+      text-decoration: none;
+      color: inherit;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .demo-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 16px;
+      padding: 1px;
+      background: linear-gradient(135deg, transparent, transparent);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      transition: background 0.3s;
+    }
+
+    .demo-card:hover {
+      transform: translateY(-4px);
+      border-color: #2d2d3d;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .demo-card:hover::before {
+      background: linear-gradient(135deg, var(--card-color), transparent);
+    }
+
+    .demo-card .icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+
+    .demo-card h2 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .demo-card .subtitle {
+      font-size: 13px;
+      color: #64748b;
+      font-weight: 500;
+    }
+
+    .demo-card .desc {
+      font-size: 14px;
+      color: #94a3b8;
+      line-height: 1.5;
+      flex: 1;
+    }
+
+    .demo-card .cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--card-color);
+      transition: gap 0.2s;
+    }
+
+    .demo-card:hover .cta { gap: 10px; }
+
+    .demo-card .cta .arrow {
+      transition: transform 0.2s;
+    }
+
+    .demo-card:hover .cta .arrow { transform: translateX(2px); }
+
+    /* ── Card Colors ──────────────────────────────────────── */
+    .card-arch  { --card-color: #6366f1; }
+    .card-cards { --card-color: #f59e0b; }
+    .card-editor { --card-color: #10b981; }
+
+    .card-arch .icon  { background: #6366f115; color: #818cf8; }
+    .card-cards .icon { background: #f59e0b15; color: #fbbf24; }
+    .card-editor .icon { background: #10b98115; color: #34d399; }
+
+    /* ── Tech strip ───────────────────────────────────────── */
+    .tech-strip {
+      padding: 24px;
+      text-align: center;
+      color: #334155;
+      font-size: 12px;
+      border-top: 1px solid #111118;
+      width: 100%;
+      max-width: 960px;
+    }
+
+    .tech-strip span {
+      margin: 0 12px;
+    }
+
+    /* ── Footer ───────────────────────────────────────────── */
+    footer {
+      padding: 32px 24px;
+      text-align: center;
+      max-width: 600px;
+    }
+
+    footer p {
+      font-size: 14px;
+      color: #475569;
+      line-height: 1.6;
+    }
+
+    footer a {
+      color: #6366f1;
+      text-decoration: none;
+    }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <div class="badge">Live Demos</div>
+    <h1>
+      <span class="accent">SVG OS</span>
+    </h1>
+    <p>
+      A programmable document engine for SVG. Rust WASM core, GPU shader rendering,
+      auto-layout, data binding — in the browser. No server, no limits.
+    </p>
+  </div>
+
+  <div class="demos">
+    <!-- Demo 1: Architecture -->
+    <a class="demo-card card-arch" href="./architecture.html">
+      <div class="icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="8" y="14" width="8" height="7" rx="1"/>
+          <line x1="6.5" y1="10" x2="12" y2="14"/>
+          <line x1="17.5" y1="10" x2="12" y2="14"/>
+        </svg>
+      </div>
+      <div>
+        <h2>Architecture Diagram</h2>
+        <div class="subtitle">JSON → auto-layout diagram in one click</div>
+      </div>
+      <div class="desc">
+        Paste a JSON graph, click Generate. Sugiyama layered layout, type-colored nodes,
+        orthogonal connectors, arrowheads. Drag nodes — connectors follow live.
+      </div>
+      <div class="cta">
+        Try it <span class="arrow">&rarr;</span>
+      </div>
+    </a>
+
+    <!-- Demo 2: Cards -->
+    <a class="demo-card card-cards" href="./cards.html">
+      <div class="icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="4" width="8" height="10" rx="1"/>
+          <rect x="8" y="2" width="8" height="10" rx="1"/>
+          <rect x="14" y="4" width="8" height="10" rx="1"/>
+          <line x1="6" y1="18" x2="6" y2="22"/>
+          <line x1="12" y1="16" x2="12" y2="22"/>
+          <line x1="18" y1="18" x2="18" y2="22"/>
+        </svg>
+      </div>
+      <div>
+        <h2>100 Cards, 3 Seconds</h2>
+        <div class="subtitle">GPU batch render → ZIP download</div>
+      </div>
+      <div class="desc">
+        Generate 100 unique cards with GPU shader backgrounds. Preview the grid,
+        download a ZIP of 2x PNGs. Three template styles to choose from.
+      </div>
+      <div class="cta">
+        Try it <span class="arrow">&rarr;</span>
+      </div>
+    </a>
+
+    <!-- Demo 3: Editor -->
+    <a class="demo-card card-editor" href="./editor/?demo=true">
+      <div class="icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 20h9"/>
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+        </svg>
+      </div>
+      <div>
+        <h2>Interactive Editor</h2>
+        <div class="subtitle">Draw · Wire · Layout — the full loop</div>
+      </div>
+      <div class="desc">
+        Full SVG editor with diagram tools, undo/redo, data binding, auto-layout.
+        The complete design-to-data loop no competitor can match.
+      </div>
+      <div class="cta">
+        Try it <span class="arrow">&rarr;</span>
+      </div>
+    </a>
+  </div>
+
+  <div class="tech-strip">
+    <span>Rust WASM</span>
+    <span>·</span>
+    <span>Sugiyama Layout</span>
+    <span>·</span>
+    <span>WebGPU Shaders</span>
+    <span>·</span>
+    <span>Zero Server Dependencies</span>
+  </div>
+
+  <footer>
+    <p>
+      SVG OS is a programmable document engine — Rust computes the diff,
+      the browser paints the SVG, GPU renders the textures. Everything runs client-side.
+    </p>
+  </footer>
+</body>
+</html>
