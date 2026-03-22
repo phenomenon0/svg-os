@@ -7,6 +7,7 @@ import { Tldraw } from "tldraw";
 import { SvgTemplateShapeUtil } from "./shapes/SvgTemplateShape";
 import { HtmlShapeUtil } from "./shapes/HtmlShape";
 import { NodePalette } from "./NodePalette";
+import { ParameterPanel } from "./ParameterPanel";
 import { initWasm } from "./lib/wasm-bridge";
 import { useEffect, useState } from "react";
 
@@ -34,7 +35,12 @@ export function App() {
       <Tldraw
         shapeUtils={customShapeUtils}
         components={{
-          InFrontOfTheCanvas: NodePalette,
+          InFrontOfTheCanvas: () => (
+            <>
+              <NodePalette />
+              <ParameterPanel />
+            </>
+          ),
         }}
         onMount={(editor) => {
           // Set dark theme

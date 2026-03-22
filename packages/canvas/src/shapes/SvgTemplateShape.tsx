@@ -1,11 +1,21 @@
 /**
- * SvgTemplateShape — renders any SVG OS template as a tldraw shape.
+ * SvgTemplateShape — renders SVG OS templates as Houdini/TD-style nodes.
  *
- * Each instance holds a typeId (which template) and rendered SVG content.
- * The SVG is pre-rendered by the WASM engine with data bindings resolved.
+ * Features:
+ * - Header bar with node type name and status indicators
+ * - Input/output port circles on left/right edges
+ * - Live SVG preview of the template content
+ * - Status strip with cook indicator and slot count
  */
 
-import { Rectangle2d, ShapeUtil, SVGContainer, T, TLBaseShape } from "tldraw";
+import {
+  HTMLContainer,
+  Rectangle2d,
+  ShapeUtil,
+  T,
+  TLBaseShape,
+  TLHandle,
+} from "tldraw";
 
 export type SvgTemplateShape = TLBaseShape<
   "svg-template",
@@ -28,117 +38,139 @@ export class SvgTemplateShapeUtil extends ShapeUtil<SvgTemplateShape> {
   };
 
   getDefaultProps(): SvgTemplateShape["props"] {
-    return {
-      w: 160,
-      h: 80,
-      typeId: "",
-      svgContent: "",
-    };
+    return { w: 200, h: 160, typeId: "", svgContent: "" };
   }
 
   override getGeometry(shape: SvgTemplateShape) {
     return new Rectangle2d({
       width: shape.props.w,
-      height: shape.props.h,
+      height: shape.props.h + 52, // +28 header +24 status
       isFilled: true,
     });
   }
 
-  override component(shape: SvgTemplateShape) {
-    const { w, h, svgContent } = shape.props;
+  override getHandles(shape: SvgTemplateShape): TLHandle[] {
+    const h = shape.props.h + 52;
+    return [
+      { id: "input", type: "vertex", index: "a0" as any, x: 0, y: h / 2, canSnap: true },
+      { id: "output", type: "vertex", index: "a1" as any, x: shape.props.w, y: h / 2, canSnap: true },
+    ];
+  }
 
-    if (!svgContent) {
-      // Placeholder when no content
-      return (
-        <SVGContainer>
-          <rect
-            width={w}
-            height={h}
-            rx={8}
-            fill="#1e293b"
-            stroke="#475569"
-            strokeWidth={2}
-          />
-          <text
-            x={w / 2}
-            y={h / 2 + 5}
-            textAnchor="middle"
-            fill="#64748b"
-            fontSize={12}
-            fontFamily="Inter, sans-serif"
-          >
-            {shape.props.typeId || "Empty"}
-          </text>
-        </SVGContainer>
-      );
-    }
+  override component(shape: SvgTemplateShape) {
+    const { w, h, typeId, svgContent } = shape.props;
+    const totalH = h + 52;
 
     return (
-      <SVGContainer>
-        <g
-          transform={`scale(${w / parseViewBoxWidth(svgContent, w)} ${h / parseViewBoxHeight(svgContent, h)})`}
-          dangerouslySetInnerHTML={{ __html: extractSvgInner(svgContent) }}
-        />
-      </SVGContainer>
+      <HTMLContainer style={{ width: w, height: totalH, pointerEvents: "all" }}>
+        <div style={{
+          width: "100%", height: "100%",
+          background: "#0f172a",
+          border: "1px solid #334155",
+          borderRadius: 8,
+          display: "flex", flexDirection: "column",
+          overflow: "hidden",
+          fontFamily: "'Inter', system-ui, sans-serif",
+          position: "relative",
+        }}>
+          {/* Header */}
+          <div style={{
+            height: 28,
+            padding: "0 10px",
+            background: "#1e293b",
+            borderBottom: "1px solid #334155",
+            display: "flex", alignItems: "center", gap: 6,
+            fontSize: 11, fontWeight: 600, color: "#94a3b8",
+            flexShrink: 0,
+          }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: "#f59e0b", flexShrink: 0 }} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+              {typeId || "SVG Template"}
+            </span>
+            <span style={{ fontSize: 9, color: "#475569" }}>SVG</span>
+          </div>
+
+          {/* Content — SVG preview */}
+          <div style={{ flex: 1, overflow: "hidden", position: "relative", background: "#0c1220" }}>
+            {svgContent ? (
+              <div
+                style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+                dangerouslySetInnerHTML={{
+                  __html: `<svg width="100%" height="100%" viewBox="0 0 ${parseVB(svgContent, w, h)}" preserveAspectRatio="xMidYMid meet">${extractSvgInner(svgContent)}</svg>`
+                }}
+              />
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#334155", fontSize: 12 }}>
+                No template
+              </div>
+            )}
+          </div>
+
+          {/* Status bar */}
+          <div style={{
+            height: 24,
+            padding: "0 10px",
+            borderTop: "1px solid #334155",
+            display: "flex", alignItems: "center", gap: 8,
+            fontSize: 10, color: "#475569",
+            flexShrink: 0,
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} />
+            <span>Ready</span>
+            <span style={{ marginLeft: "auto" }}>SVG</span>
+          </div>
+
+          {/* Input port */}
+          <div style={{
+            position: "absolute", left: -6, top: "50%", transform: "translateY(-50%)",
+            width: 12, height: 12, borderRadius: "50%",
+            background: "#06b6d4", border: "2px solid #0f172a",
+            cursor: "crosshair",
+          }} />
+
+          {/* Output port */}
+          <div style={{
+            position: "absolute", right: -6, top: "50%", transform: "translateY(-50%)",
+            width: 12, height: 12, borderRadius: "50%",
+            background: "#f59e0b", border: "2px solid #0f172a",
+            cursor: "crosshair",
+          }} />
+        </div>
+      </HTMLContainer>
     );
   }
 
   override indicator(shape: SvgTemplateShape) {
-    return (
-      <rect
-        width={shape.props.w}
-        height={shape.props.h}
-        rx={8}
-      />
-    );
+    return <rect width={shape.props.w} height={shape.props.h + 52} rx={8} />;
   }
 
-  override canResize() {
-    return true;
-  }
+  override canResize() { return true; }
 
-  override onResize(shape: SvgTemplateShape, info: { newPoint: { x: number; y: number }; handle: string; scaleX: number; scaleY: number }) {
+  override onResize(shape: SvgTemplateShape, info: { scaleX: number; scaleY: number }) {
     return {
       props: {
-        w: Math.max(40, shape.props.w * info.scaleX),
-        h: Math.max(40, shape.props.h * info.scaleY),
+        w: Math.max(120, shape.props.w * info.scaleX),
+        h: Math.max(60, shape.props.h * info.scaleY),
       },
     };
   }
 }
 
-/**
- * Extract the inner content of an SVG string (everything inside <svg>...</svg>).
- */
 function extractSvgInner(svg: string): string {
-  // Remove the outer <svg> and </svg> tags
   const openMatch = svg.match(/<svg[^>]*>/);
   if (!openMatch) return svg;
   const start = openMatch.index! + openMatch[0].length;
   const end = svg.lastIndexOf("</svg>");
-  if (end === -1) return svg.slice(start);
-  return svg.slice(start, end);
+  return end === -1 ? svg.slice(start) : svg.slice(start, end);
 }
 
-/**
- * Parse the viewBox or width from an SVG string.
- */
-function parseViewBoxWidth(svg: string, fallback: number): number {
+function parseVB(svg: string, fw: number, fh: number): string {
   const vb = svg.match(/viewBox="([^"]+)"/);
   if (vb) {
-    const parts = vb[1].split(/[\s,]+/);
-    if (parts.length >= 4) return parseFloat(parts[2]) || fallback;
+    const parts = vb[1].trim().split(/[\s,]+/);
+    if (parts.length === 4) return vb[1];
   }
   const w = svg.match(/width="(\d+(?:\.\d+)?)"/);
-  return w ? parseFloat(w[1]) : fallback;
-}
-
-function parseViewBoxHeight(svg: string, fallback: number): number {
-  const vb = svg.match(/viewBox="([^"]+)"/);
-  if (vb) {
-    const parts = vb[1].split(/[\s,]+/);
-    if (parts.length >= 4) return parseFloat(parts[3]) || fallback;
-  }
   const h = svg.match(/height="(\d+(?:\.\d+)?)"/);
-  return h ? parseFloat(h[1]) : fallback;
+  return `0 0 ${w ? w[1] : fw} ${h ? h[1] : fh}`;
 }

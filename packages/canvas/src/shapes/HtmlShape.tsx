@@ -5,7 +5,7 @@
  * content works: tables, charts, styled divs, iframes, video, forms.
  */
 
-import { HTMLContainer, Rectangle2d, ShapeUtil, T, TLBaseShape } from "tldraw";
+import { HTMLContainer, Rectangle2d, ShapeUtil, T, TLBaseShape, TLHandle } from "tldraw";
 
 export type HtmlShape = TLBaseShape<
   "html",
@@ -47,18 +47,25 @@ export class HtmlShapeUtil extends ShapeUtil<HtmlShape> {
     });
   }
 
+  override getHandles(shape: HtmlShape): TLHandle[] {
+    return [
+      { id: "input", type: "vertex", index: "a0" as any, x: 0, y: shape.props.h / 2, canSnap: true },
+      { id: "output", type: "vertex", index: "a1" as any, x: shape.props.w, y: shape.props.h / 2, canSnap: true },
+    ];
+  }
+
   override component(shape: HtmlShape) {
     const { w, h, variant, title, content } = shape.props;
 
+    const variantColors: Record<string, string> = {
+      dashboard: "#22c55e", table: "#3b82f6", terminal: "#a855f7",
+      metric: "#f59e0b", markdown: "#06b6d4", card: "#64748b",
+    };
+    const accent = variantColors[variant] || "#64748b";
+
     return (
       <HTMLContainer
-        style={{
-          width: w,
-          height: h,
-          overflow: "hidden",
-          borderRadius: 8,
-          pointerEvents: "all",
-        }}
+        style={{ width: w, height: h, overflow: "hidden", borderRadius: 8, pointerEvents: "all", position: "relative" }}
       >
         {variant === "dashboard" && <DashboardCard w={w} h={h} title={title} content={content} />}
         {variant === "table" && <TableCard w={w} h={h} title={title} content={content} />}
@@ -66,6 +73,35 @@ export class HtmlShapeUtil extends ShapeUtil<HtmlShape> {
         {variant === "metric" && <MetricCard w={w} h={h} title={title} content={content} />}
         {variant === "markdown" && <MarkdownCard w={w} h={h} title={title} content={content} />}
         {variant === "card" && <GenericCard w={w} h={h} title={title} content={content} />}
+
+        {/* Input port */}
+        <div style={{
+          position: "absolute", left: -6, top: "50%", transform: "translateY(-50%)",
+          width: 12, height: 12, borderRadius: "50%",
+          background: "#06b6d4", border: "2px solid #0f172a",
+          cursor: "crosshair", zIndex: 10,
+        }} />
+
+        {/* Output port */}
+        <div style={{
+          position: "absolute", right: -6, top: "50%", transform: "translateY(-50%)",
+          width: 12, height: 12, borderRadius: "50%",
+          background: accent, border: "2px solid #0f172a",
+          cursor: "crosshair", zIndex: 10,
+        }} />
+
+        {/* Status bar */}
+        <div style={{
+          position: "absolute", bottom: 0, left: 0, right: 0,
+          height: 20, padding: "0 8px",
+          background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", gap: 6,
+          fontSize: 9, color: "#64748b",
+        }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#22c55e" }} />
+          <span>Live</span>
+          <span style={{ marginLeft: "auto", textTransform: "uppercase", letterSpacing: "0.05em" }}>{variant}</span>
+        </div>
       </HTMLContainer>
     );
   }
