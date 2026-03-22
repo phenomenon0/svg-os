@@ -8,6 +8,9 @@ export default defineConfig({
   },
   server: {
     port: 5180,
+    fs: {
+      allow: ["../.."],
+    },
   },
   plugins: [
     viteStaticCopy({
@@ -15,6 +18,10 @@ export default defineConfig({
         {
           src: "../bridge/wasm/svg_wasm_bg.wasm",
           dest: "assets",
+        },
+        {
+          src: "../../fixtures/templates/*.svg",
+          dest: "templates",
         },
       ],
     }),

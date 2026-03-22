@@ -589,10 +589,15 @@ function onPointerDown(e: PointerEvent) {
 
   // Node palette placement mode
   if (getPlacingType() && e.button === 0) {
-    const nodeId = placeNode(pt.x, pt.y);
-    if (nodeId) {
-      fullRerender();
-      selectNode(nodeId);
+    try {
+      const nodeId = placeNode(pt.x, pt.y);
+      console.log(`[palette] placed ${getPlacingType()} → nodeId=${nodeId}`);
+      if (nodeId) {
+        fullRerender();
+        selectNode(nodeId);
+      }
+    } catch (e) {
+      console.error(`[palette] placement failed:`, e);
     }
     return;
   }
@@ -948,10 +953,11 @@ function renderPortIndicators(): void {
       const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
       circle.setAttribute("cx", String(px));
       circle.setAttribute("cy", String(py));
-      circle.setAttribute("r", "4");
+      const portRadius = 4 / viewTransform.scale;
+      circle.setAttribute("r", String(portRadius));
       circle.setAttribute("fill", "#f59e0b");
       circle.setAttribute("stroke", "#0f172a");
-      circle.setAttribute("stroke-width", "1");
+      circle.setAttribute("stroke-width", String(1 / viewTransform.scale));
       circle.setAttribute("data-port-indicator", "true");
       circle.style.pointerEvents = "none";
       svg.appendChild(circle);
@@ -1448,10 +1454,10 @@ function renderBindingsList() {
 
 // ── Node Palette ─────────────────────────────────────────────────────────────
 
-function setupNodePalette() {
+async function setupNodePalette() {
   const paletteEl = document.getElementById("node-palette");
   if (!paletteEl) return;
-  initPalette(paletteEl, {
+  await initPalette(paletteEl, {
     onPlaceNode: (_typeId, _x, _y) => {
       // Handled in onPointerDown via getPlacingType()
     },

@@ -113,6 +113,9 @@ impl NodeTypeRegistry {
 
     /// Instantiate a node type into a document at position (x, y).
     /// Returns the root group NodeId of the new instance, or None if type not found.
+    ///
+    /// Large templates are scaled down to fit within 200x200 max node size.
+    /// Template defs (gradients, filters) are copied into the target document's defs.
     pub fn instantiate(
         &self,
         type_id: &str,
@@ -123,29 +126,59 @@ impl NodeTypeRegistry {
         let node_type = self.types.get(type_id)?;
         let source_doc = self.parsed.get(type_id)?;
 
-        // Clone the source document's root children into the target document
         let root = doc.root;
         let source_root = source_doc.root;
         let source_children = source_doc.children(source_root);
+
+        // Calculate scale to fit within max node size
+        let max_node_size = 200.0f32;
+        let scale_x = max_node_size / node_type.default_width;
+        let scale_y = max_node_size / node_type.default_height;
+        let scale = scale_x.min(scale_y).min(1.0); // Don't upscale small templates
+
+        let node_w = node_type.default_width * scale;
+        let node_h = node_type.default_height * scale;
 
         // Create a wrapper group for the instance
         let mut group = Node::new(SvgTag::G);
         group.set_attr(AttrKey::X, AttrValue::F32(x));
         group.set_attr(AttrKey::Y, AttrValue::F32(y));
-        group.set_attr(AttrKey::Width, AttrValue::F32(node_type.default_width));
-        group.set_attr(AttrKey::Height, AttrValue::F32(node_type.default_height));
-        // Tag with the node type for the property panel
+        group.set_attr(AttrKey::Width, AttrValue::F32(node_w));
+        group.set_attr(AttrKey::Height, AttrValue::F32(node_h));
+
+        // Apply transform: translate to position + scale down
+        let transform_str = if (scale - 1.0).abs() < 0.001 {
+            format!("translate({}, {})", x, y)
+        } else {
+            format!("translate({}, {}) scale({})", x, y, scale)
+        };
+        group.set_attr(AttrKey::Transform,
+            AttrValue::parse(&AttrKey::Transform, &transform_str));
+
         group.set_attr(AttrKey::Custom(0), AttrValue::Str(type_id.to_string()));
         group.add_default_ports();
         let group_id = group.id;
         let insert_idx = doc.children(root).len();
         doc.insert_node(root, insert_idx, group);
 
-        // Deep-copy each child from the source document's root (skip defs)
+        // Copy defs content (gradients, filters) into target document's defs
+        let defs_id = doc.defs;
         for src_child_id in &source_children {
             if let Some(src_child) = source_doc.get(*src_child_id) {
                 if src_child.tag == SvgTag::Defs {
-                    continue; // Skip defs, they go in the target doc's defs
+                    let src_defs_children = source_doc.children(*src_child_id);
+                    for def_child_id in &src_defs_children {
+                        deep_copy_node(source_doc, *def_child_id, doc, defs_id);
+                    }
+                }
+            }
+        }
+
+        // Deep-copy each non-defs child from the source document's root
+        for src_child_id in &source_children {
+            if let Some(src_child) = source_doc.get(*src_child_id) {
+                if src_child.tag == SvgTag::Defs {
+                    continue;
                 }
                 deep_copy_node(source_doc, *src_child_id, doc, group_id);
             }

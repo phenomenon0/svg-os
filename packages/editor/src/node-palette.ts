@@ -25,14 +25,15 @@ let callbacks: PaletteCallbacks | null = null;
 
 /**
  * Initialize the palette panel. Call after WASM is loaded.
+ * Awaits template loading before rendering.
  */
-export function initPalette(container: HTMLElement, cbs: PaletteCallbacks): void {
+export async function initPalette(container: HTMLElement, cbs: PaletteCallbacks): Promise<void> {
   callbacks = cbs;
 
-  // Register built-in types from templates (loaded via fetch at runtime)
-  registerBuiltinTypes();
+  // Register built-in types from templates — wait for all to load
+  await registerBuiltinTypes();
 
-  // Render palette UI
+  // Render palette UI with loaded types
   renderPalette(container);
 }
 
@@ -208,12 +209,17 @@ async function registerBuiltinTypes(): Promise<void> {
   // Load template SVGs from fixtures (relative path depends on dev server)
   for (const bt of builtins) {
     try {
-      const resp = await fetch(`../../fixtures/templates/${bt.file}`);
+      const resp = await fetch(`/templates/${bt.file}`);
       if (resp.ok) {
         const svg = await resp.text();
         registerNodeType({ id: bt.id, name: bt.name, category: bt.category, template_svg: svg });
+        console.log(`[palette] registered ${bt.id} (${svg.length} chars)`);
+      } else {
+        console.warn(`[palette] failed to fetch ${bt.file}: ${resp.status}`);
       }
-    } catch { /* ignore load failures */ }
+    } catch (e) {
+      console.error(`[palette] error registering ${bt.id}:`, e);
+    }
   }
 
   // Re-render palette after loading
