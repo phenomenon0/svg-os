@@ -1,0 +1,16 @@
+{
+  "nodes": [
+    {"id": "api", "label": "API Gateway", "type": "service"},
+    {"id": "auth", "label": "Auth Service", "type": "service"},
+    {"id": "db", "label": "PostgreSQL", "type": "database"},
+    {"id": "cache", "label": "Redis Cache", "type": "cache"},
+    {"id": "queue", "label": "Message Queue", "type": "queue"}
+  ],
+  "edges": [
+    {"from": "api", "to": "auth"},
+    {"from": "api", "to": "cache"},
+    {"from": "auth", "to": "db"},
+    {"from": "api", "to": "queue"},
+    {"from": "queue", "to": "db"}
+  ]
+}

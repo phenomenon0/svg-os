@@ -12,6 +12,7 @@ export default defineConfig({
         main: resolve(__dirname, "index.html"),
         architecture: resolve(__dirname, "architecture.html"),
         cards: resolve(__dirname, "cards.html"),
+        textDemo: resolve(__dirname, "text-demo.html"),
       },
     },
   },

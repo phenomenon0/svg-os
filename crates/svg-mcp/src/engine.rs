@@ -28,11 +28,14 @@ pub struct TemplateSlot {
 ///
 /// Parses the SVG, finds data-bind attributes, resolves them against
 /// the provided data, and returns the modified SVG string.
+/// After binding, runs text layout on any `<text>` elements to produce
+/// positioned `<tspan>` children with word wrapping.
 pub fn render_template(
     template_svg: &str,
     data: &serde_json::Value,
 ) -> Result<String, String> {
-    resolve_svg_bindings(template_svg, data, None)
+    let bound_svg = resolve_svg_bindings(template_svg, data, None)?;
+    layout_text_in_svg(&bound_svg)
 }
 
 /// Render template for each row, returning a Vec of SVG strings.
@@ -366,6 +369,47 @@ fn expr_value_to_json(val: &svg_runtime::ExprValue) -> serde_json::Value {
             serde_json::Value::Array(items.iter().map(expr_value_to_json).collect())
         }
     }
+}
+
+/// Post-process SVG to run text layout on <text> elements.
+/// Parses the SVG into a Document, runs paragraph layout on text nodes,
+/// emits <tspan> children, and re-serializes.
+fn layout_text_in_svg(svg: &str) -> Result<String, String> {
+    let mut doc = svg_doc::doc_from_svg_string(svg)
+        .map_err(|e| format!("SVG parse error: {}", e))?;
+
+    let measurer = svg_text::MockTextMeasure::new(16.0);
+
+    // Walk all nodes, find <text> elements
+    let text_nodes: Vec<svg_doc::NodeId> = doc.nodes.iter()
+        .filter(|(_, n)| n.tag == svg_doc::SvgTag::Text)
+        .map(|(id, _)| *id)
+        .collect();
+
+    for text_id in text_nodes {
+        let runs = svg_doc::extract_text_runs(&doc, text_id);
+        if runs.is_empty() {
+            continue;
+        }
+
+        // Get the parent container width for wrapping (if available)
+        let max_width = doc.get(text_id)
+            .and_then(|n| n.parent)
+            .and_then(|pid| doc.get(pid))
+            .map(|p| p.get_f32(&svg_doc::AttrKey::Width))
+            .filter(|w| *w > 0.0)
+            .unwrap_or(f32::INFINITY);
+
+        let config = svg_text::paragraph::ParagraphConfig {
+            max_width: if max_width.is_finite() { max_width - 20.0 } else { f32::INFINITY },
+            ..Default::default()
+        };
+
+        let layout = svg_text::paragraph::layout_paragraphs(&runs, &config, &measurer);
+        svg_text::emit::emit_layout(&layout, text_id, &mut doc);
+    }
+
+    Ok(svg_doc::doc_to_svg_string(&doc))
 }
 
 #[cfg(test)]

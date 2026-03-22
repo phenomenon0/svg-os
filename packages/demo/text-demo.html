@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SVG OS — Text Engine Demo</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .header {
+      text-align: center;
+      padding: 3rem 1rem 2rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .header h1 { font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .header p { color: var(--muted); font-size: 1.1rem; max-width: 600px; margin: 0 auto; }
+    .demos {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem 1rem;
+      display: grid;
+      gap: 2rem;
+    }
+    .demo-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .demo-card h2 {
+      padding: 1rem 1.5rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .demo-card h2 .tag {
+      font-size: 0.7rem;
+      background: var(--accent);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .demo-content {
+      padding: 1.5rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+    .demo-content.full { grid-template-columns: 1fr; }
+    .demo-input {
+      background: #0f172a;
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--muted);
+      overflow-x: auto;
+      white-space: pre;
+    }
+    .demo-output {
+      background: white;
+      border-radius: 8px;
+      padding: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 120px;
+    }
+    .demo-output svg {
+      max-width: 100%;
+      height: auto;
+    }
+    .demo-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+    .demo-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+    .footer a { color: var(--accent); text-decoration: none; }
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .stat { text-align: center; }
+    .stat .num { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+    .stat .label { font-size: 0.75rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>SVG OS Text Engine</h1>
+    <p>Paragraph layout, mixed styles, alignment, ellipsis, auto-scaling, hyphenation, and RTL — all running in a 500KB WASM binary.</p>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="num">24</div><div class="label">Built-in Functions</div></div>
+    <div class="stat"><div class="num">199</div><div class="label">Tests Passing</div></div>
+    <div class="stat"><div class="num">11</div><div class="label">Rust Crates</div></div>
+    <div class="stat"><div class="num">5</div><div class="label">MCP Tools</div></div>
+  </div>
+
+  <div class="demos">
+
+    <!-- Word Wrap -->
+    <div class="demo-card">
+      <h2>Word Wrapping <span class="tag">LAYOUT</span></h2>
+      <div class="demo-content">
+        <div>
+          <div class="demo-label">Input</div>
+          <div class="demo-input">TextRun: "The quick brown fox jumps
+over the lazy dog near the river"
+
+ParagraphConfig {
+  max_width: 200.0,
+  align: Start,
+}</div>
+        </div>
+        <div>
+          <div class="demo-label">Output</div>
+          <div class="demo-output">
+            <svg xmlns="http://www.w3.org/2000/svg" width="220" height="80" viewBox="0 0 220 80">
+              <rect x="0" y="0" width="200" height="80" fill="#f8fafc" stroke="#e2e8f0" rx="4"/>
+              <text font-family="Inter, sans-serif" font-size="14">
+                <tspan x="8" y="20">The quick brown fox</tspan>
+                <tspan x="8" y="38">jumps over the lazy</tspan>
+                <tspan x="8" y="56">dog near the river</tspan>
+              </text>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mixed Styles -->
+    <div class="demo-card">
+      <h2>Mixed Styles <span class="tag">RICH TEXT</span></h2>
+      <div class="demo-content">
+        <div>
+          <div class="demo-label">Input</div>
+          <div class="demo-input">Run 1: "MARCUS " (bold, 24px)
+Run 2: "VALENCIA" (normal, 24px)
+
+extract_text_runs() → layout → emit</div>
+        </div>
+        <div>
+          <div class="demo-label">Output</div>
+          <div class="demo-output">
+            <svg xmlns="http://www.w3.org/2000/svg" width="320" height="50" viewBox="0 0 320 50">
+              <rect x="0" y="0" width="320" height="50" fill="#1e293b" rx="6"/>
+              <text>
+                <tspan x="12" y="33" font-family="Inter, sans-serif" font-size="24" font-weight="bold" fill="white">MARCUS </tspan>
+                <tspan x="140" y="33" font-family="Inter, sans-serif" font-size="24" font-weight="normal" fill="#94a3b8">VALENCIA</tspan>
+              </text>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alignment -->
+    <div class="demo-card">
+      <h2>Text Alignment <span class="tag">START / MIDDLE / END / JUSTIFY</span></h2>
+      <div class="demo-content full">
+        <div class="demo-row">
+          <div>
+            <div class="demo-label">Start</div>
+            <div class="demo-output">
+              <svg xmlns="http://www.w3.org/2000/svg" width="200" height="50" viewBox="0 0 200 50">
+                <rect x="0" y="0" width="200" height="50" fill="#f8fafc" stroke="#e2e8f0" rx="4"/>
+                <text font-family="Inter, sans-serif" font-size="12">
+                  <tspan x="8" y="18">Hello World</tspan>
+                  <tspan x="8" y="34">Foo Bar</tspan>
+                </text>
+              </svg>
+            </div>
+          </div>
+          <div>
+            <div class="demo-label">Middle</div>
+            <div class="demo-output">
+              <svg xmlns="http://www.w3.org/2000/svg" width="200" height="50" viewBox="0 0 200 50">
+                <rect x="0" y="0" width="200" height="50" fill="#f8fafc" stroke="#e2e8f0" rx="4"/>
+                <text font-family="Inter, sans-serif" font-size="12" text-anchor="middle">
+                  <tspan x="100" y="18">Hello World</tspan>
+                  <tspan x="100" y="34">Foo Bar</tspan>
+                </text>
+              </svg>
+            </div>
+          </div>
+          <div>
+            <div class="demo-label">End</div>
+            <div class="demo-output">
+              <svg xmlns="http://www.w3.org/2000/svg" width="200" height="50" viewBox="0 0 200 50">
+                <rect x="0" y="0" width="200" height="50" fill="#f8fafc" stroke="#e2e8f0" rx="4"/>
+                <text font-family="Inter, sans-serif" font-size="12" text-anchor="end">
+                  <tspan x="192" y="18">Hello World</tspan>
+                  <tspan x="192" y="34">Foo Bar</tspan>
+                </text>
+              </svg>
+            </div>
+          </div>
+          <div>
+            <div class="demo-label">Justify</div>
+            <div class="demo-output">
+              <svg xmlns="http://www.w3.org/2000/svg" width="200" height="50" viewBox="0 0 200 50">
+                <rect x="0" y="0" width="200" height="50" fill="#f8fafc" stroke="#e2e8f0" rx="4"/>
+                <text font-family="Inter, sans-serif" font-size="12">
+                  <tspan x="8" y="18">Hello</tspan>
+                  <tspan x="101" y="18">World</tspan>
+                  <tspan x="8" y="34">Foo Bar</tspan>
+                </text>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ellipsis -->
+    <div class="demo-card">
+      <h2>Ellipsis Overflow <span class="tag">TRUNCATION</span></h2>
+      <div class="demo-content">
+        <div>
+          <div class="demo-label">Config</div>
+          <div class="demo-input">ParagraphConfig {
+  max_width: 180.0,
+  max_height: 36.0,
+  overflow: Ellipsis,
+}
+
+Input: "A very long paragraph
+that overflows the container
+and gets truncated with ..."</div>
+        </div>
+        <div>
+          <div class="demo-label">Output</div>
+          <div class="demo-output">
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="60" viewBox="0 0 200 60">
+              <rect x="0" y="0" width="200" height="40" fill="#fef3c7" stroke="#f59e0b" rx="4"/>
+              <text font-family="Inter, sans-serif" font-size="13">
+                <tspan x="8" y="17">A very long paragraph</tspan>
+                <tspan x="8" y="33">that overflows the…</tspan>
+              </text>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Auto-Scaling -->
+    <div class="demo-card">
+      <h2>Font Auto-Scaling <span class="tag">RESPONSIVE</span></h2>
+      <div class="demo-content full">
+        <div class="demo-row">
+          <div>
+            <div class="demo-label">Short name → large font</div>
+            <div class="demo-output">
+              <svg xmlns="http://www.w3.org/2000/svg" width="200" height="50" viewBox="0 0 200 50">
+                <rect x="0" y="0" width="200" height="50" fill="#1e293b" rx="6"/>
+                <text x="100" y="35" font-family="Inter, sans-serif" font-size="28" font-weight="bold" fill="white" text-anchor="middle">LI WEI</text>
+              </svg>
+            </div>
+          </div>
+          <div>
+            <div class="demo-label">Long name → smaller font</div>
+            <div class="demo-output">
+              <svg xmlns="http://www.w3.org/2000/svg" width="200" height="50" viewBox="0 0 200 50">
+                <rect x="0" y="0" width="200" height="50" fill="#1e293b" rx="6"/>
+                <text x="100" y="32" font-family="Inter, sans-serif" font-size="16" font-weight="bold" fill="white" text-anchor="middle">ALEXANDER-ARNOLD</text>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Multi-Paragraph -->
+    <div class="demo-card">
+      <h2>Multi-Paragraph <span class="tag">NEWLINES</span></h2>
+      <div class="demo-content">
+        <div>
+          <div class="demo-label">Input</div>
+          <div class="demo-input">"First paragraph here.\n\nSecond
+paragraph with more text that
+wraps within the container."
+
+paragraph_spacing: 8.0</div>
+        </div>
+        <div>
+          <div class="demo-label">Output</div>
+          <div class="demo-output">
+            <svg xmlns="http://www.w3.org/2000/svg" width="220" height="100" viewBox="0 0 220 100">
+              <rect x="0" y="0" width="220" height="100" fill="#f8fafc" stroke="#e2e8f0" rx="4"/>
+              <text font-family="Inter, sans-serif" font-size="12">
+                <tspan x="8" y="18">First paragraph here.</tspan>
+                <tspan x="8" y="44">Second paragraph with</tspan>
+                <tspan x="8" y="60">more text that wraps</tspan>
+                <tspan x="8" y="76">within the container.</tspan>
+              </text>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Expression Engine -->
+    <div class="demo-card">
+      <h2>Expression Engine <span class="tag">24 FUNCTIONS</span></h2>
+      <div class="demo-content full">
+        <div class="demo-input" style="font-size: 0.85rem; line-height: 1.8;">
+<span style="color:#94a3b8;">// Conditional color based on score</span>
+if($.score > 90, '#d4a843', if($.score > 80, '#c0c0c0', '#cd7f32'))
+
+<span style="color:#94a3b8;">// Weighted composite stat</span>
+$.pac * 0.15 + $.sho * 0.25 + $.pas * 0.20 + $.dri * 0.20 + $.def * 0.10 + $.phy * 0.10
+
+<span style="color:#94a3b8;">// Format display strings</span>
+format('{} / {}', $.goals, $.appearances)
+
+<span style="color:#94a3b8;">// String manipulation</span>
+truncate(upper($.name), 15, '...')  |  pad_start(str($.rank), 3, '0')  |  replace($.tag, '_', ' ')
+
+<span style="color:#94a3b8;">// Batch-aware rendering</span>
+if(row_index() % 2 == 0, '#f8f8f8', '#ffffff')</div>
+      </div>
+    </div>
+
+    <!-- RTL -->
+    <div class="demo-card">
+      <h2>RTL / Bidirectional <span class="tag">UNICODE</span></h2>
+      <div class="demo-content">
+        <div>
+          <div class="demo-label">Input</div>
+          <div class="demo-input">TextRun: "مرحبا بالعالم"
+direction: Rtl
+
+TextRun: "Hello مرحبا World"
+direction: Auto (mixed)</div>
+        </div>
+        <div>
+          <div class="demo-label">Output</div>
+          <div class="demo-output">
+            <svg xmlns="http://www.w3.org/2000/svg" width="220" height="60" viewBox="0 0 220 60">
+              <rect x="0" y="0" width="220" height="60" fill="#f8fafc" stroke="#e2e8f0" rx="4"/>
+              <text font-family="Inter, sans-serif" font-size="16" direction="rtl">
+                <tspan x="210" y="24" text-anchor="end">مرحبا بالعالم</tspan>
+              </text>
+              <text font-family="Inter, sans-serif" font-size="12">
+                <tspan x="8" y="50">Hello مرحبا World</tspan>
+              </text>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CLI -->
+    <div class="demo-card">
+      <h2>CLI & MCP Server <span class="tag">5 TOOLS</span></h2>
+      <div class="demo-content full">
+        <div class="demo-input" style="font-size: 0.85rem; line-height: 1.8; color: #e2e8f0;">
+<span style="color:#22c55e;">$</span> svg-os render template.svg data.json > output.svg
+<span style="color:#22c55e;">$</span> svg-os batch card.svg rows.json ./cards/
+<span style="color:#22c55e;">$</span> svg-os diagram graph.json > diagram.svg
+<span style="color:#22c55e;">$</span> svg-os eval "format('{} scored {}', $.name, $.score)" data.json
+<span style="color:#94a3b8;">→ Alice scored 95</span>
+<span style="color:#22c55e;">$</span> svg-os describe template.svg
+<span style="color:#94a3b8;">→ { "slots": [{ "field": "name", "type": "text" }, ...] }</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <p>SVG OS — Programmable visual document engine</p>
+    <p style="margin-top: 0.5rem;">
+      <a href="./">Home</a> &middot;
+      <a href="./architecture.html">Architecture Demo</a> &middot;
+      <a href="./cards.html">Cards Demo</a> &middot;
+      <a href="https://github.com/phenomenon0/svg-os">GitHub</a>
+    </p>
+  </div>
+</body>
+</html>
