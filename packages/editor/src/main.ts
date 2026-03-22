@@ -12,7 +12,7 @@ import {
   bind, evaluateBindings, applyTheme, repeatTemplate,
   cloneNode, groupNodes, ungroupNode,
   addDefaultPorts, getPorts, addConnector, updateConnectors, autoLayout,
-  generateDiagram,
+  generateDiagram, getNodeInfo,
 } from "@svg-os/bridge";
 import type { Binding, Theme, Port } from "@svg-os/bridge";
 
@@ -66,10 +66,83 @@ async function init() {
     setupPanelTabs();
     setupDataPanel();
     updateUndoRedoButtons();
+
+    // Seed demo content when loaded with ?demo=true
+    if (new URLSearchParams(window.location.search).has("demo")) {
+      seedDemoContent();
+    }
   } catch (e) {
     statusText.textContent = `Failed to load WASM: ${e}`;
     console.error(e);
   }
+}
+
+/**
+ * Seed the editor with a small starter diagram for the demo experience.
+ * Creates 3 connected diagram nodes + a floating tooltip.
+ */
+function seedDemoContent() {
+  const root = rootId();
+
+  // Create 3 diagram nodes as groups with rect + text
+  const nodeData = [
+    { label: "Frontend", x: 100, y: 80 },
+    { label: "API Server", x: 300, y: 80 },
+    { label: "Database", x: 200, y: 240 },
+  ];
+
+  const nodeIds: string[] = [];
+  for (const nd of nodeData) {
+    const g = createNode(root, "g", { transform: `translate(${nd.x}, ${nd.y})` });
+    createNode(g, "rect", {
+      x: "0", y: "0", width: "140", height: "50",
+      rx: "8", ry: "8",
+      fill: "#1e3a5f", stroke: "#3b82f6", "stroke-width": "2",
+    });
+    createNode(g, "text", {
+      x: "70", y: "30",
+      "text-anchor": "middle",
+      fill: "#93c5fd",
+      "font-family": "Inter, system-ui, sans-serif",
+      "font-size": "13",
+      "font-weight": "500",
+    });
+    // Set text content via setAttr (the WASM engine handles TextContent)
+    const textId = (() => {
+      const info = getNodeInfo(g);
+      return info.children[info.children.length - 1];
+    })();
+    setAttr(textId, "TextContent", nd.label);
+
+    addDefaultPorts(g);
+    nodeIds.push(g);
+  }
+
+  // Connect: Frontend → API Server, API Server → Database
+  addConnector({ from: [nodeIds[0], "right"], to: [nodeIds[1], "left"], routing: "Orthogonal" });
+  addConnector({ from: [nodeIds[1], "bottom"], to: [nodeIds[2], "top"], routing: "Orthogonal" });
+  updateConnectors();
+
+  // Full re-render to show everything
+  fullRerender();
+
+  // Show a floating tooltip
+  const tooltip = document.createElement("div");
+  tooltip.style.cssText = `
+    position: fixed; top: 72px; left: 50%; transform: translateX(-50%);
+    background: #1e293b; border: 1px solid #3b82f6; border-radius: 8px;
+    padding: 10px 18px; color: #93c5fd; font-size: 13px; z-index: 100;
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.2);
+    font-family: Inter, system-ui, sans-serif;
+    pointer-events: none; opacity: 0; transition: opacity 0.5s;
+  `;
+  tooltip.textContent = "Press N to add a node, W to wire, click Layout to auto-arrange";
+  document.body.appendChild(tooltip);
+  requestAnimationFrame(() => { tooltip.style.opacity = "1"; });
+  setTimeout(() => {
+    tooltip.style.opacity = "0";
+    setTimeout(() => tooltip.remove(), 500);
+  }, 6000);
 }
 
 // ── Rendering ───────────────────────────────────────────────────────────────
