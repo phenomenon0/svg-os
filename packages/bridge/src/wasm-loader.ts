@@ -53,6 +53,19 @@ export interface SvgOsWasm {
   svg_os_get_connectors(): string;
   svg_os_auto_layout(config_json: string): void;
   svg_os_generate_diagram(graph_json: string, config_json: string): string;
+
+  // Node types
+  svg_os_register_node_type(type_json: string): void;
+  svg_os_list_node_types(): string;
+  svg_os_get_node_type(type_id: string): string;
+  svg_os_instantiate_node_type(type_id: string, x: number, y: number, data_json: string): string;
+
+  // Data flow
+  svg_os_evaluate_data_flow(data_json: string): void;
+  svg_os_get_node_data(node_id: string): string;
+
+  // Expression eval
+  svg_os_eval_expr(expr: string, data_json: string): string;
 }
 
 let wasmModule: SvgOsWasm | null = null;

@@ -19,6 +19,9 @@ check:
 clippy:
     cargo clippy --workspace -- -D warnings
 
+canvas:
+    just wasm && cd packages/canvas && pnpm dev
+
 dev-studio:
     just wasm && cd packages/studio && pnpm dev
 
