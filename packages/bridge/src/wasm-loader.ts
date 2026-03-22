@@ -66,6 +66,9 @@ export interface SvgOsWasm {
 
   // Expression eval
   svg_os_eval_expr(expr: string, data_json: string): string;
+
+  // Inline template rendering (standalone, no Engine state needed)
+  svg_os_render_template_inline(template_svg: string, data_json: string): string;
 }
 
 let wasmModule: SvgOsWasm | null = null;

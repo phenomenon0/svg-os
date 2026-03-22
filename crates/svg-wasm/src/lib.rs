@@ -1047,6 +1047,194 @@ pub fn svg_os_instantiate_node_type(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Inline template rendering (standalone, no Engine state)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Resolve data-bind attributes in an SVG template string and return the
+/// modified SVG.  This is a **standalone** function — it does not touch the
+/// thread-local Engine and can therefore be called synchronously from the
+/// tldraw canvas whenever data changes.
+///
+/// Supported bind attributes:
+///   data-bind="field"          → sets text content
+///   data-bind-fill="field"     → sets fill attribute
+///   data-bind-stop="field"     → sets stop-color attribute
+///   data-bind-expr="expr"      → evaluates expression, sets text content
+///   data-bind-attr-X="field"   → sets attribute X
+#[wasm_bindgen]
+pub fn svg_os_render_template_inline(
+    template_svg: &str,
+    data_json: &str,
+) -> Result<String, JsValue> {
+    let data: serde_json::Value = serde_json::from_str(data_json)
+        .map_err(|err| JsValue::from_str(&format!("Invalid data JSON: {}", err)))?;
+
+    render_template_inline(template_svg, &data)
+        .map_err(|err| JsValue::from_str(&err))
+}
+
+// ── Inline template helpers ─────────────────────────────────────────────────
+
+/// Pure-Rust implementation of data-bind resolution via quick-xml.
+fn render_template_inline(
+    svg: &str,
+    data: &serde_json::Value,
+) -> Result<String, String> {
+    use quick_xml::events::{Event, BytesStart, BytesText};
+    use quick_xml::{Reader, Writer};
+    use std::io::Cursor;
+
+    let mut reader = Reader::from_str(svg);
+    let mut writer = Writer::new(Cursor::new(Vec::new()));
+    let mut buf = Vec::new();
+
+    let mut pending_text: Option<String> = None;
+    let mut in_bound_element = false;
+    let mut depth_at_bind: usize = 0;
+    let mut current_depth: usize = 0;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                current_depth += 1;
+                let mut elem = BytesStart::from(e.name());
+                let mut text_bind: Option<String> = None;
+
+                for attr_result in e.attributes() {
+                    let attr = attr_result.map_err(|e| format!("XML attr error: {}", e))?;
+                    let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                    let val = attr.unescape_value().map_err(|e| format!("XML unescape: {}", e))?;
+
+                    if key == "data-bind" {
+                        text_bind = resolve_field(data, &val);
+                    } else if key == "data-bind-expr" {
+                        text_bind = eval_inline_expr(&val, data);
+                    } else if key == "data-bind-fill" {
+                        if let Some(v) = resolve_field(data, &val) {
+                            elem.push_attribute(("fill", v.as_str()));
+                        }
+                    } else if key == "data-bind-stop" {
+                        if let Some(v) = resolve_field(data, &val) {
+                            elem.push_attribute(("stop-color", v.as_str()));
+                        }
+                    } else if let Some(target_attr) = key.strip_prefix("data-bind-attr-") {
+                        if let Some(v) = resolve_field(data, &val) {
+                            elem.push_attribute((target_attr, v.as_str()));
+                        }
+                    } else {
+                        elem.push_attribute(attr);
+                    }
+                }
+
+                writer.write_event(Event::Start(elem))
+                    .map_err(|e| format!("XML write: {}", e))?;
+
+                if let Some(text) = text_bind {
+                    pending_text = Some(text);
+                    in_bound_element = true;
+                    depth_at_bind = current_depth;
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                if in_bound_element && current_depth == depth_at_bind {
+                    if let Some(ref text) = pending_text {
+                        writer.write_event(Event::Text(BytesText::new(text)))
+                            .map_err(|e| format!("XML write: {}", e))?;
+                    }
+                    pending_text = None;
+                    in_bound_element = false;
+                }
+                current_depth = current_depth.saturating_sub(1);
+                writer.write_event(Event::End(e.to_owned()))
+                    .map_err(|e| format!("XML write: {}", e))?;
+            }
+            Ok(Event::Text(ref e)) => {
+                if in_bound_element && current_depth == depth_at_bind {
+                    // Skip original text — will be replaced at End
+                } else {
+                    writer.write_event(Event::Text(e.to_owned()))
+                        .map_err(|e| format!("XML write: {}", e))?;
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                let mut elem = BytesStart::from(e.name());
+
+                for attr_result in e.attributes() {
+                    let attr = attr_result.map_err(|e| format!("XML attr error: {}", e))?;
+                    let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                    let val = attr.unescape_value().map_err(|e| format!("XML unescape: {}", e))?;
+
+                    if key == "data-bind-fill" {
+                        if let Some(v) = resolve_field(data, &val) {
+                            elem.push_attribute(("fill", v.as_str()));
+                        }
+                    } else if key == "data-bind-stop" {
+                        if let Some(v) = resolve_field(data, &val) {
+                            elem.push_attribute(("stop-color", v.as_str()));
+                        }
+                    } else if let Some(target_attr) = key.strip_prefix("data-bind-attr-") {
+                        if let Some(v) = resolve_field(data, &val) {
+                            elem.push_attribute((target_attr, v.as_str()));
+                        }
+                    } else if key == "data-bind" || key == "data-bind-expr" {
+                        // Skip — self-closing elements can't have text content
+                    } else {
+                        elem.push_attribute(attr);
+                    }
+                }
+
+                writer.write_event(Event::Empty(elem))
+                    .map_err(|e| format!("XML write: {}", e))?;
+            }
+            Ok(Event::Eof) => break,
+            Ok(e) => {
+                writer.write_event(e)
+                    .map_err(|err| format!("XML write: {}", err))?;
+            }
+            Err(e) => return Err(format!("XML parse error: {}", e)),
+        }
+        buf.clear();
+    }
+
+    let result = writer.into_inner().into_inner();
+    String::from_utf8(result).map_err(|e| format!("UTF-8 error: {}", e))
+}
+
+/// Resolve a dotted field path against JSON data, returning the string value.
+fn resolve_field(data: &serde_json::Value, field: &str) -> Option<String> {
+    let mut current = data;
+    for part in field.split('.') {
+        match current {
+            serde_json::Value::Object(map) => current = map.get(part)?,
+            serde_json::Value::Array(arr) => {
+                let idx: usize = part.parse().ok()?;
+                current = arr.get(idx)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(match current {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    })
+}
+
+/// Evaluate an expression string against data using the svg-runtime expression engine.
+fn eval_inline_expr(expr: &str, data: &serde_json::Value) -> Option<String> {
+    let compiled = svg_runtime::CompiledExpr::parse(expr).ok()?;
+    let ctx = svg_runtime::EvalContext {
+        data,
+        value: None,
+        row_index: None,
+        row_count: None,
+    };
+    compiled.eval_to_string(&ctx).ok()
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Expression evaluation (debug/testing)
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1180,5 +1368,48 @@ mod tests {
         let ops = svg_os_get_render_ops().unwrap();
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&ops).unwrap();
         assert!(!parsed.is_empty());
+    }
+
+    #[test]
+    fn render_template_inline_text_and_fill() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">
+  <text data-bind="name">Placeholder</text>
+  <rect data-bind-fill="color" fill="#ccc" width="100" height="50"/>
+</svg>"##;
+        let data = r##"{"name": "Alice", "color": "#ff0000"}"##;
+        let result = svg_os_render_template_inline(svg, data).unwrap();
+        assert!(result.contains("Alice"), "should contain bound text");
+        assert!(result.contains(r##"fill="#ff0000""##), "should contain bound fill");
+        assert!(!result.contains("Placeholder"), "original text should be replaced");
+    }
+
+    #[test]
+    fn render_template_inline_expr() {
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg">
+  <text data-bind-expr="if($.score > 90, 'Excellent', 'Good')">?</text>
+</svg>"#;
+        let data = r#"{"score": 95}"#;
+        let result = svg_os_render_template_inline(svg, data).unwrap();
+        assert!(result.contains("Excellent"));
+    }
+
+    #[test]
+    fn render_template_inline_attr_binding() {
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg">
+  <rect data-bind-attr-width="w" width="10" height="50"/>
+</svg>"#;
+        let data = r#"{"w": "200"}"#;
+        let result = svg_os_render_template_inline(svg, data).unwrap();
+        assert!(result.contains(r#"width="200""#));
+    }
+
+    #[test]
+    fn render_template_inline_nested_field() {
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg">
+  <text data-bind="user.name">?</text>
+</svg>"#;
+        let data = r#"{"user": {"name": "Bob"}}"#;
+        let result = svg_os_render_template_inline(svg, data).unwrap();
+        assert!(result.contains("Bob"));
     }
 }

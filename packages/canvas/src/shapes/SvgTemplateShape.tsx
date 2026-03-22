@@ -22,6 +22,7 @@ export type SvgTemplateShape = TLBaseShape<
     h: number;
     typeId: string;
     svgContent: string;
+    data: string;
   }
 >;
 
@@ -37,10 +38,11 @@ export class SvgTemplateShapeUtil extends ShapeUtil<SvgTemplateShape> {
     h: T.number,
     typeId: T.string,
     svgContent: T.string,
+    data: T.string,
   };
 
   getDefaultProps(): SvgTemplateShape["props"] {
-    return { w: 160, h: 100, typeId: "", svgContent: "" };
+    return { w: 160, h: 100, typeId: "", svgContent: "", data: "" };
   }
 
   override getGeometry(shape: SvgTemplateShape) {

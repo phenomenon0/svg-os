@@ -28,6 +28,7 @@ export {
   autoLayout, generateDiagram,
   registerNodeType, listNodeTypes, getNodeType, instantiateNodeType,
   evaluateDataFlow, getNodeData,
+  renderTemplateInline,
 } from "./api.js";
 
 export { applyOps, resetElementMap, getElement } from "./dom-apply.js";

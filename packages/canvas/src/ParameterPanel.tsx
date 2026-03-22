@@ -64,6 +64,9 @@ export function ParameterPanel() {
 
 function SvgTemplateParams({ shape, editor }: { shape: any; editor: any }) {
   const typeId = shape.props.typeId;
+  const shapeData: Record<string, unknown> = (() => {
+    try { return JSON.parse(shape.props.data || "{}"); } catch { return {}; }
+  })();
 
   // Get slot definitions for this type
   let slots: Array<{ field: string; bind_type: string; target_attr: string }> = [];
@@ -73,10 +76,22 @@ function SvgTemplateParams({ shape, editor }: { shape: any; editor: any }) {
     if (nt) slots = nt.slots;
   } catch { /* WASM not ready */ }
 
+  const updateSlotValue = (field: string, value: string) => {
+    const currentData: Record<string, unknown> = (() => {
+      try { return JSON.parse(shape.props.data || "{}"); } catch { return {}; }
+    })();
+    currentData[field] = value;
+    editor.updateShape({
+      id: shape.id,
+      type: "svg-template",
+      props: { data: JSON.stringify(currentData) },
+    });
+  };
+
   return (
     <div style={{ padding: 12 }}>
       <ParamGroup label="Node">
-        <ParamRow label="Type" value={typeId || "—"} readonly />
+        <ParamRow label="Type" value={typeId || "\u2014"} readonly />
         <ParamRow label="Width" value={String(Math.round(shape.props.w))} readonly />
         <ParamRow label="Height" value={String(Math.round(shape.props.h))} readonly />
       </ParamGroup>
@@ -87,12 +102,9 @@ function SvgTemplateParams({ shape, editor }: { shape: any; editor: any }) {
             <ParamRow
               key={slot.field}
               label={slot.field}
-              value=""
-              placeholder={`${slot.bind_type} → ${slot.target_attr}`}
-              onChange={(val) => {
-                // Would update the shape's data and re-render via WASM
-                console.log(`Set ${slot.field} = ${val}`);
-              }}
+              value={shapeData[slot.field] != null ? String(shapeData[slot.field]) : ""}
+              placeholder={`${slot.bind_type} \u2192 ${slot.target_attr}`}
+              onChange={(val) => updateSlotValue(slot.field, val)}
             />
           ))}
         </ParamGroup>

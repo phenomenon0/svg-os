@@ -9,6 +9,7 @@ import { HtmlShapeUtil } from "./shapes/HtmlShape";
 import { NodePalette } from "./NodePalette";
 import { ParameterPanel } from "./ParameterPanel";
 import { initWasm } from "./lib/wasm-bridge";
+import { wireReactiveEngine } from "./lib/reactive-engine";
 import { useEffect, useState } from "react";
 
 const customShapeUtils = [SvgTemplateShapeUtil, HtmlShapeUtil];
@@ -49,6 +50,7 @@ export function App() {
         }}
         onMount={(editor) => {
           editor.user.updateUserPreferences({ colorScheme: "dark" });
+          wireReactiveEngine(editor);
         }}
       />
     </div>

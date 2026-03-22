@@ -803,6 +803,7 @@ dependencies = [
  "forge-math",
  "js-sys",
  "log",
+ "quick-xml",
  "serde",
  "serde_json",
  "svg-doc",

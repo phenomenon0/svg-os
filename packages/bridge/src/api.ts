@@ -268,6 +268,14 @@ export function instantiateNodeType(
   return getWasm().svg_os_instantiate_node_type(typeId, x, y, JSON.stringify(data ?? {}));
 }
 
+// ── Inline template rendering ────────────────────────────────────────────────
+
+/** Resolve data-bind attributes in an SVG template string synchronously.
+ *  Does not require Engine state — useful for re-rendering templates on data change. */
+export function renderTemplateInline(templateSvg: string, data: Record<string, unknown>): string {
+  return getWasm().svg_os_render_template_inline(templateSvg, JSON.stringify(data));
+}
+
 // ── Data Flow ────────────────────────────────────────────────────────────────
 
 export function evaluateDataFlow(data?: Record<string, unknown>): void {
