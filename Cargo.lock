@@ -282,6 +282,7 @@ version = "0.1.0"
 dependencies = [
  "forge-math",
  "serde",
+ "svg-doc",
 ]
 
 [[package]]

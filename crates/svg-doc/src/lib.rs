@@ -11,11 +11,13 @@ mod document;
 mod command;
 mod serialize;
 mod parse;
+mod text;
 
 pub use node::{Node, NodeId, Port, PortDirection};
 pub use tag::SvgTag;
 pub use attr::{AttrKey, AttrValue, LengthUnit};
 pub use document::Document;
-pub use command::SvgCommand;
+pub use command::{SvgCommand, CommandError};
 pub use serialize::doc_to_svg_string;
 pub use parse::doc_from_svg_string;
+pub use text::{TextRun, TextStyle, TextAlign, FontStyle as TextFontStyle, TextDecoration, extract_text_runs};

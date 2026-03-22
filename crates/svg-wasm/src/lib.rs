@@ -45,15 +45,35 @@ thread_local! {
     static ENGINE: RefCell<Option<Engine>> = RefCell::new(None);
 }
 
-fn with_engine<F, R>(f: F) -> R
+fn with_engine<F, R>(f: F) -> Result<R, JsValue>
 where
     F: FnOnce(&mut Engine) -> R,
 {
     ENGINE.with(|e| {
         let mut borrow = e.borrow_mut();
-        let engine = borrow.as_mut().expect("svg_os_init() not called");
-        f(engine)
+        match borrow.as_mut() {
+            Some(engine) => Ok(f(engine)),
+            None => Err(JsValue::from_str("svg_os_init() has not been called")),
+        }
     })
+}
+
+fn try_with_engine<F, R>(f: F) -> Result<R, JsValue>
+where
+    F: FnOnce(&mut Engine) -> Result<R, JsValue>,
+{
+    ENGINE.with(|e| {
+        let mut borrow = e.borrow_mut();
+        match borrow.as_mut() {
+            Some(engine) => f(engine),
+            None => Err(JsValue::from_str("svg_os_init() has not been called")),
+        }
+    })
+}
+
+/// Map a CommandError to JsValue.
+fn cmd_err(e: svg_doc::CommandError) -> JsValue {
+    JsValue::from_str(&e.to_string())
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -74,28 +94,25 @@ pub fn svg_os_import_svg(svg: &str) -> std::result::Result<(), JsValue> {
     let doc = svg_doc::doc_from_svg_string(svg)
         .map_err(|e| JsValue::from_str(&e))?;
 
-    ENGINE.with(|e| {
-        let mut borrow = e.borrow_mut();
-        let engine = borrow.as_mut().expect("svg_os_init() not called");
+    try_with_engine(|engine| {
         engine.doc = doc;
         engine.diff = DiffEngine::new();
         engine.undo_stack.clear();
         engine.redo_stack.clear();
-    });
-
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Export the document to an SVG string.
 #[wasm_bindgen]
-pub fn svg_os_export_svg() -> String {
+pub fn svg_os_export_svg() -> Result<String, JsValue> {
     with_engine(|e| svg_doc::doc_to_svg_string(&e.doc))
 }
 
 /// Create a new node. Returns the new NodeId as a string.
 #[wasm_bindgen]
 pub fn svg_os_create_node(parent_id: &str, tag: &str, attrs_json: &str) -> std::result::Result<String, JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let parent = NodeId::from_str(parent_id)
             .ok_or_else(|| JsValue::from_str("Invalid parent ID"))?;
         let svg_tag = SvgTag::from_name(tag);
@@ -125,7 +142,7 @@ pub fn svg_os_create_node(parent_id: &str, tag: &str, attrs_json: &str) -> std::
             parent,
             index,
         };
-        let inverse = cmd.execute(&mut e.doc);
+        let inverse = cmd.execute(&mut e.doc).map_err(cmd_err)?;
         e.undo_stack.push(inverse);
         e.redo_stack.clear();
 
@@ -136,7 +153,7 @@ pub fn svg_os_create_node(parent_id: &str, tag: &str, attrs_json: &str) -> std::
 /// Remove a node and its subtree.
 #[wasm_bindgen]
 pub fn svg_os_remove_node(id: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let node_id = NodeId::from_str(id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
 
@@ -146,7 +163,7 @@ pub fn svg_os_remove_node(id: &str) -> std::result::Result<(), JsValue> {
             parent: None,
             index: 0,
         };
-        let inverse = cmd.execute(&mut e.doc);
+        let inverse = cmd.execute(&mut e.doc).map_err(cmd_err)?;
         e.undo_stack.push(inverse);
         e.redo_stack.clear();
 
@@ -157,7 +174,7 @@ pub fn svg_os_remove_node(id: &str) -> std::result::Result<(), JsValue> {
 /// Set an attribute on a node.
 #[wasm_bindgen]
 pub fn svg_os_set_attr(id: &str, key: &str, value: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let node_id = NodeId::from_str(id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
         let attr_key = AttrKey::from_name(key);
@@ -169,7 +186,7 @@ pub fn svg_os_set_attr(id: &str, key: &str, value: &str) -> std::result::Result<
             value: attr_value,
             old_value: None,
         };
-        let inverse = cmd.execute(&mut e.doc);
+        let inverse = cmd.execute(&mut e.doc).map_err(cmd_err)?;
         e.undo_stack.push(inverse);
         e.redo_stack.clear();
 
@@ -180,7 +197,7 @@ pub fn svg_os_set_attr(id: &str, key: &str, value: &str) -> std::result::Result<
 /// Remove an attribute from a node.
 #[wasm_bindgen]
 pub fn svg_os_remove_attr(id: &str, key: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let node_id = NodeId::from_str(id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
         let attr_key = AttrKey::from_name(key);
@@ -190,7 +207,7 @@ pub fn svg_os_remove_attr(id: &str, key: &str) -> std::result::Result<(), JsValu
             key: attr_key,
             old_value: None,
         };
-        let inverse = cmd.execute(&mut e.doc);
+        let inverse = cmd.execute(&mut e.doc).map_err(cmd_err)?;
         e.undo_stack.push(inverse);
         e.redo_stack.clear();
 
@@ -201,7 +218,7 @@ pub fn svg_os_remove_attr(id: &str, key: &str) -> std::result::Result<(), JsValu
 /// Move a node to a new parent at the given index.
 #[wasm_bindgen]
 pub fn svg_os_reparent(id: &str, new_parent: &str, index: u32) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let node_id = NodeId::from_str(id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
         let parent_id = NodeId::from_str(new_parent)
@@ -214,7 +231,7 @@ pub fn svg_os_reparent(id: &str, new_parent: &str, index: u32) -> std::result::R
             old_parent: None,
             old_index: 0,
         };
-        let inverse = cmd.execute(&mut e.doc);
+        let inverse = cmd.execute(&mut e.doc).map_err(cmd_err)?;
         e.undo_stack.push(inverse);
         e.redo_stack.clear();
 
@@ -226,7 +243,7 @@ pub fn svg_os_reparent(id: &str, new_parent: &str, index: u32) -> std::result::R
 /// attrs_json is an object like {"x": "10", "y": "20"}
 #[wasm_bindgen]
 pub fn svg_os_set_attrs_batch(id: &str, attrs_json: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let node_id = NodeId::from_str(id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
 
@@ -253,7 +270,7 @@ pub fn svg_os_set_attrs_batch(id: &str, attrs_json: &str) -> std::result::Result
         }
 
         let batch = svg_doc::SvgCommand::Batch { commands };
-        let inverse = batch.execute(&mut e.doc);
+        let inverse = batch.execute(&mut e.doc).map_err(cmd_err)?;
         e.undo_stack.push(inverse);
         e.redo_stack.clear();
 
@@ -263,46 +280,46 @@ pub fn svg_os_set_attrs_batch(id: &str, attrs_json: &str) -> std::result::Result
 
 /// Undo the last command.
 #[wasm_bindgen]
-pub fn svg_os_undo() -> bool {
-    with_engine(|e| {
+pub fn svg_os_undo() -> Result<bool, JsValue> {
+    try_with_engine(|e| {
         if let Some(cmd) = e.undo_stack.pop() {
-            let inverse = cmd.execute(&mut e.doc);
+            let inverse = cmd.execute(&mut e.doc).map_err(cmd_err)?;
             e.redo_stack.push(inverse);
-            true
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     })
 }
 
 /// Redo the last undone command.
 #[wasm_bindgen]
-pub fn svg_os_redo() -> bool {
-    with_engine(|e| {
+pub fn svg_os_redo() -> Result<bool, JsValue> {
+    try_with_engine(|e| {
         if let Some(cmd) = e.redo_stack.pop() {
-            let inverse = cmd.execute(&mut e.doc);
+            let inverse = cmd.execute(&mut e.doc).map_err(cmd_err)?;
             e.undo_stack.push(inverse);
-            true
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     })
 }
 
 #[wasm_bindgen]
-pub fn svg_os_can_undo() -> bool {
+pub fn svg_os_can_undo() -> Result<bool, JsValue> {
     with_engine(|e| !e.undo_stack.is_empty())
 }
 
 #[wasm_bindgen]
-pub fn svg_os_can_redo() -> bool {
+pub fn svg_os_can_redo() -> Result<bool, JsValue> {
     with_engine(|e| !e.redo_stack.is_empty())
 }
 
 /// Get render ops as JSON (array of SvgDomOp).
 /// First call returns full render; subsequent calls return diffs.
 #[wasm_bindgen]
-pub fn svg_os_get_render_ops() -> String {
+pub fn svg_os_get_render_ops() -> Result<String, JsValue> {
     with_engine(|e| {
         let ops = if e.diff.last_rendered_count() == 0 {
             e.diff.full_render(&e.doc)
@@ -316,7 +333,7 @@ pub fn svg_os_get_render_ops() -> String {
 /// Reset the diff engine and return a full render.
 /// Call this after undo/redo or when the TS-side DOM has been cleared.
 #[wasm_bindgen]
-pub fn svg_os_full_render() -> String {
+pub fn svg_os_full_render() -> Result<String, JsValue> {
     with_engine(|e| {
         // Clear dirty/removed so full_render starts clean
         e.doc.take_dirty();
@@ -328,7 +345,7 @@ pub fn svg_os_full_render() -> String {
 
 /// Get the full document as JSON (for debugging).
 #[wasm_bindgen]
-pub fn svg_os_get_document_json() -> String {
+pub fn svg_os_get_document_json() -> Result<String, JsValue> {
     with_engine(|e| {
         serde_json::to_string(&e.doc).unwrap_or_else(|_| "{}".to_string())
     })
@@ -336,13 +353,13 @@ pub fn svg_os_get_document_json() -> String {
 
 /// Get the root node ID.
 #[wasm_bindgen]
-pub fn svg_os_root_id() -> String {
+pub fn svg_os_root_id() -> Result<String, JsValue> {
     with_engine(|e| e.doc.root.to_string())
 }
 
 /// Get the defs node ID.
 #[wasm_bindgen]
-pub fn svg_os_defs_id() -> String {
+pub fn svg_os_defs_id() -> Result<String, JsValue> {
     with_engine(|e| e.doc.defs.to_string())
 }
 
@@ -353,7 +370,7 @@ pub fn svg_os_defs_id() -> String {
 /// Add an effect to a node's effect stack.
 #[wasm_bindgen]
 pub fn svg_os_add_effect(node_id: &str, effect_json: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let id = NodeId::from_str(node_id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
         let effect: svg_effects::Effect = serde_json::from_str(effect_json)
@@ -366,7 +383,7 @@ pub fn svg_os_add_effect(node_id: &str, effect_json: &str) -> std::result::Resul
 /// Remove an effect from a node's stack by index.
 #[wasm_bindgen]
 pub fn svg_os_remove_effect(node_id: &str, index: u32) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let id = NodeId::from_str(node_id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
         e.effects.remove_effect(id, index as usize);
@@ -377,7 +394,7 @@ pub fn svg_os_remove_effect(node_id: &str, index: u32) -> std::result::Result<()
 /// Add a constraint.
 #[wasm_bindgen]
 pub fn svg_os_add_constraint(constraint_json: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let constraint: svg_layout::Constraint = serde_json::from_str(constraint_json)
             .map_err(|err| JsValue::from_str(&format!("Invalid constraint JSON: {}", err)))?;
         e.constraints.add(constraint);
@@ -387,7 +404,7 @@ pub fn svg_os_add_constraint(constraint_json: &str) -> std::result::Result<(), J
 
 /// Solve all constraints, then update connector paths.
 #[wasm_bindgen]
-pub fn svg_os_solve_constraints() {
+pub fn svg_os_solve_constraints() -> Result<(), JsValue> {
     with_engine(|e| {
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
         e.constraints.solve(&mut e.doc, viewport);
@@ -398,7 +415,7 @@ pub fn svg_os_solve_constraints() {
 /// Register a data binding.
 #[wasm_bindgen]
 pub fn svg_os_bind(binding_json: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let binding: svg_runtime::Binding = serde_json::from_str(binding_json)
             .map_err(|err| JsValue::from_str(&format!("Invalid binding JSON: {}", err)))?;
         e.bindings.bind(binding);
@@ -409,7 +426,7 @@ pub fn svg_os_bind(binding_json: &str) -> std::result::Result<(), JsValue> {
 /// Evaluate all bindings against provided data.
 #[wasm_bindgen]
 pub fn svg_os_evaluate_bindings(data_json: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let data: serde_json::Value = serde_json::from_str(data_json)
             .map_err(|err| JsValue::from_str(&format!("Invalid data JSON: {}", err)))?;
         e.bindings.evaluate(&mut e.doc, &data);
@@ -420,7 +437,7 @@ pub fn svg_os_evaluate_bindings(data_json: &str) -> std::result::Result<(), JsVa
 /// Apply a theme to the document.
 #[wasm_bindgen]
 pub fn svg_os_apply_theme(theme_json: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let theme = Theme::from_json(theme_json)
             .map_err(|err| JsValue::from_str(&err))?;
         theme.apply(&mut e.doc);
@@ -431,7 +448,7 @@ pub fn svg_os_apply_theme(theme_json: &str) -> std::result::Result<(), JsValue> 
 /// Instantiate a template with data. Returns the new node ID.
 #[wasm_bindgen]
 pub fn svg_os_instantiate_template(template_id: &str, data_json: &str) -> std::result::Result<String, JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let tmpl = NodeId::from_str(template_id)
             .ok_or_else(|| JsValue::from_str("Invalid template ID"))?;
         let data: serde_json::Value = serde_json::from_str(data_json)
@@ -453,7 +470,7 @@ pub fn svg_os_repeat_template(
     gap_x: f32,
     gap_y: f32,
 ) -> std::result::Result<String, JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let tmpl = NodeId::from_str(template_id)
             .ok_or_else(|| JsValue::from_str("Invalid template ID"))?;
         let rows: Vec<serde_json::Value> = serde_json::from_str(rows_json)
@@ -471,7 +488,7 @@ pub fn svg_os_repeat_template(
 /// Export a single node and its subtree as an SVG string.
 #[wasm_bindgen]
 pub fn svg_os_export_node_svg(node_id: &str) -> std::result::Result<String, JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let _id = NodeId::from_str(node_id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
 
@@ -488,7 +505,7 @@ pub fn svg_os_export_node_svg(node_id: &str) -> std::result::Result<String, JsVa
 /// Set ports on a node from JSON: [{ name, position: [x, y], direction }]
 #[wasm_bindgen]
 pub fn svg_os_add_ports(node_id: &str, ports_json: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let id = NodeId::from_str(node_id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
         let ports: Vec<svg_doc::Port> = serde_json::from_str(ports_json)
@@ -503,7 +520,7 @@ pub fn svg_os_add_ports(node_id: &str, ports_json: &str) -> std::result::Result<
 /// Add default cardinal ports (top, right, bottom, left) to a node.
 #[wasm_bindgen]
 pub fn svg_os_add_default_ports(node_id: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let id = NodeId::from_str(node_id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
         if let Some(node) = e.doc.get_mut(id) {
@@ -516,7 +533,7 @@ pub fn svg_os_add_default_ports(node_id: &str) -> std::result::Result<(), JsValu
 /// Get ports for a node as JSON.
 #[wasm_bindgen]
 pub fn svg_os_get_ports(node_id: &str) -> std::result::Result<String, JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let id = NodeId::from_str(node_id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
         let empty: Vec<svg_doc::Port> = Vec::new();
@@ -531,7 +548,7 @@ pub fn svg_os_get_ports(node_id: &str) -> std::result::Result<String, JsValue> {
 /// JSON: { from: [nodeId, portName], to: [nodeId, portName], routing: "Straight"|"Orthogonal" }
 #[wasm_bindgen]
 pub fn svg_os_add_connector(connector_json: &str) -> std::result::Result<String, JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let val: serde_json::Value = serde_json::from_str(connector_json)
             .map_err(|err| JsValue::from_str(&format!("Invalid JSON: {}", err)))?;
 
@@ -566,7 +583,7 @@ pub fn svg_os_add_connector(connector_json: &str) -> std::result::Result<String,
             parent: root,
             index,
         };
-        let inverse = cmd.execute(&mut e.doc);
+        let inverse = cmd.execute(&mut e.doc).map_err(cmd_err)?;
         e.undo_stack.push(inverse);
         e.redo_stack.clear();
 
@@ -589,7 +606,7 @@ pub fn svg_os_add_connector(connector_json: &str) -> std::result::Result<String,
 /// Remove a connector by its path node ID.
 #[wasm_bindgen]
 pub fn svg_os_remove_connector(path_node_id: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let path_id = NodeId::from_str(path_node_id)
             .ok_or_else(|| JsValue::from_str("Invalid path node ID"))?;
 
@@ -602,7 +619,7 @@ pub fn svg_os_remove_connector(path_node_id: &str) -> std::result::Result<(), Js
             parent: None,
             index: 0,
         };
-        let inverse = cmd.execute(&mut e.doc);
+        let inverse = cmd.execute(&mut e.doc).map_err(cmd_err)?;
         e.undo_stack.push(inverse);
         e.redo_stack.clear();
 
@@ -612,7 +629,7 @@ pub fn svg_os_remove_connector(path_node_id: &str) -> std::result::Result<(), Js
 
 /// Recompute all connector paths from current node positions.
 #[wasm_bindgen]
-pub fn svg_os_update_connectors() {
+pub fn svg_os_update_connectors() -> Result<(), JsValue> {
     with_engine(|e| {
         e.connectors.update_paths(&mut e.doc);
     })
@@ -620,7 +637,7 @@ pub fn svg_os_update_connectors() {
 
 /// Get all connectors as JSON.
 #[wasm_bindgen]
-pub fn svg_os_get_connectors() -> String {
+pub fn svg_os_get_connectors() -> Result<String, JsValue> {
     with_engine(|e| {
         serde_json::to_string(e.connectors.connectors())
             .unwrap_or_else(|_| "[]".to_string())
@@ -631,7 +648,7 @@ pub fn svg_os_get_connectors() -> String {
 /// config_json: { direction: "TopToBottom"|"LeftToRight", nodeGap: number, layerGap: number }
 #[wasm_bindgen]
 pub fn svg_os_auto_layout(config_json: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let val: serde_json::Value = serde_json::from_str(config_json)
             .map_err(|err| JsValue::from_str(&format!("Invalid JSON: {}", err)))?;
 
@@ -688,7 +705,7 @@ pub fn svg_os_auto_layout(config_json: &str) -> std::result::Result<(), JsValue>
 /// Returns JSON: { "node_map": { "data-id": "node-uuid", ... }, "connector_count": N }
 #[wasm_bindgen]
 pub fn svg_os_generate_diagram(graph_json: &str, config_json: &str) -> std::result::Result<String, JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let graph: serde_json::Value = serde_json::from_str(graph_json)
             .map_err(|err| JsValue::from_str(&format!("Invalid graph JSON: {}", err)))?;
 
@@ -731,7 +748,7 @@ pub fn svg_os_generate_diagram(graph_json: &str, config_json: &str) -> std::resu
 /// Clone a node subtree. Returns the new root node's ID.
 #[wasm_bindgen]
 pub fn svg_os_clone_node(id: &str) -> std::result::Result<String, JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let node_id = NodeId::from_str(id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
 
@@ -763,7 +780,7 @@ pub fn svg_os_clone_node(id: &str) -> std::result::Result<String, JsValue> {
 /// Returns the new group's ID.
 #[wasm_bindgen]
 pub fn svg_os_group_nodes(ids_json: &str) -> std::result::Result<String, JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let ids: Vec<String> = serde_json::from_str(ids_json)
             .map_err(|err| JsValue::from_str(&format!("Invalid JSON: {}", err)))?;
 
@@ -810,7 +827,7 @@ pub fn svg_os_group_nodes(ids_json: &str) -> std::result::Result<String, JsValue
 /// Ungroup: move children of a `<g>` to its parent, then remove the `<g>`.
 #[wasm_bindgen]
 pub fn svg_os_ungroup(group_id: &str) -> std::result::Result<(), JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let gid = NodeId::from_str(group_id)
             .ok_or_else(|| JsValue::from_str("Invalid group ID"))?;
 
@@ -848,7 +865,7 @@ pub fn svg_os_ungroup(group_id: &str) -> std::result::Result<(), JsValue> {
 /// Returns: { tag, attrs: { key: value }, children: [id, ...] }
 #[wasm_bindgen]
 pub fn svg_os_get_node_info(id: &str) -> std::result::Result<String, JsValue> {
-    with_engine(|e| {
+    try_with_engine(|e| {
         let node_id = NodeId::from_str(id)
             .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
 
@@ -880,6 +897,31 @@ pub fn svg_os_get_node_info(id: &str) -> std::result::Result<String, JsValue> {
     })
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Expression evaluation (debug/testing)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Evaluate an expression against JSON data. Returns the result as a string.
+/// Useful for debugging and testing expressions in the Studio.
+#[wasm_bindgen]
+pub fn svg_os_eval_expr(expr: &str, data_json: &str) -> Result<String, JsValue> {
+    let data: serde_json::Value = serde_json::from_str(data_json)
+        .map_err(|err| JsValue::from_str(&format!("Invalid JSON: {}", err)))?;
+
+    let compiled = svg_runtime::CompiledExpr::parse(expr)
+        .map_err(|err| JsValue::from_str(&format!("Parse error: {}", err)))?;
+
+    let ctx = svg_runtime::EvalContext {
+        data: &data,
+        value: None,
+        row_index: None,
+        row_count: None,
+    };
+
+    compiled.eval_to_string(&ctx)
+        .map_err(|err| JsValue::from_str(&format!("Eval error: {}", err)))
+}
+
 // ── Non-WASM test support ───────────────────────────────────────────────────
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -894,7 +936,7 @@ mod tests {
     #[test]
     fn init_and_export() {
         svg_os_init();
-        let svg = svg_os_export_svg();
+        let svg = svg_os_export_svg().unwrap();
         assert!(svg.contains("<svg"));
         assert!(svg.contains("</svg>"));
     }
@@ -902,22 +944,22 @@ mod tests {
     #[test]
     fn create_and_undo() {
         svg_os_init();
-        let root = svg_os_root_id();
+        let root = svg_os_root_id().unwrap();
 
         let rect_id = svg_os_create_node(&root, "rect", r##"{"x":"10","y":"20","width":"100","height":"50","fill":"#ff0000"}"##).unwrap();
         assert!(!rect_id.is_empty());
 
-        let svg = svg_os_export_svg();
+        let svg = svg_os_export_svg().unwrap();
         assert!(svg.contains("<rect"));
 
         // Undo
-        assert!(svg_os_undo());
-        let svg = svg_os_export_svg();
+        assert!(svg_os_undo().unwrap());
+        let svg = svg_os_export_svg().unwrap();
         assert!(!svg.contains("<rect"));
 
         // Redo
-        assert!(svg_os_redo());
-        let svg = svg_os_export_svg();
+        assert!(svg_os_redo().unwrap());
+        let svg = svg_os_export_svg().unwrap();
         assert!(svg.contains("<rect"));
     }
 
@@ -929,14 +971,14 @@ mod tests {
         </svg>"#;
 
         svg_os_import_svg(input).unwrap();
-        let svg = svg_os_export_svg();
+        let svg = svg_os_export_svg().unwrap();
         assert!(svg.contains("width=\"190\""));
     }
 
     #[test]
     fn render_ops_json() {
         svg_os_init();
-        let ops = svg_os_get_render_ops();
+        let ops = svg_os_get_render_ops().unwrap();
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&ops).unwrap();
         assert!(!parsed.is_empty());
     }

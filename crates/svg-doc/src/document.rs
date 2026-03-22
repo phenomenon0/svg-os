@@ -97,6 +97,49 @@ impl Document {
         id
     }
 
+    /// Insert an entire subtree (list of nodes in pre-order).
+    /// The first node is inserted as a child of `parent` at `index`.
+    /// Subsequent nodes are re-inserted by their stored parent references.
+    pub fn insert_subtree(
+        &mut self,
+        parent: NodeId,
+        index: usize,
+        nodes: Vec<Node>,
+    ) {
+        if nodes.is_empty() {
+            return;
+        }
+
+        // First node: attach to the specified parent
+        let mut root = nodes[0].clone();
+        let root_id = root.id;
+        root.parent = Some(parent);
+        root.children.clear();
+
+        if let Some(parent_node) = self.nodes.get_mut(&parent) {
+            let idx = index.min(parent_node.children.len());
+            parent_node.children.insert(idx, root_id);
+        }
+        self.nodes.insert(root_id, root);
+        self.mark_dirty(root_id);
+        self.mark_dirty(parent);
+
+        // Remaining nodes: insert using their stored parent references
+        for node in nodes.into_iter().skip(1) {
+            let id = node.id;
+            let node_parent = node.parent.unwrap_or(root_id);
+            let mut node = node;
+            node.children.clear();
+            node.parent = Some(node_parent);
+
+            if let Some(p) = self.nodes.get_mut(&node_parent) {
+                p.children.push(id);
+            }
+            self.nodes.insert(id, node);
+            self.mark_dirty(id);
+        }
+    }
+
     /// Remove a node and its entire subtree.
     /// Returns all removed nodes (for undo).
     pub fn remove_subtree(&mut self, id: NodeId) -> Vec<Node> {
@@ -265,8 +308,8 @@ impl Document {
     }
 
     /// Execute a command against this document (without recording for undo).
-    pub fn execute(&mut self, cmd: &SvgCommand) {
-        cmd.apply(self);
+    pub fn execute(&mut self, cmd: &SvgCommand) -> Result<(), crate::command::CommandError> {
+        cmd.apply(self)
     }
 }
 

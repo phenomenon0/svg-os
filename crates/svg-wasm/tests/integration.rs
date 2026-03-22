@@ -64,7 +64,7 @@ fn undo_redo_integrity() {
         index: 1,
     };
 
-    let undo_cmd = cmd.execute(&mut doc);
+    let undo_cmd = cmd.execute(&mut doc).unwrap();
     assert_eq!(doc.node_count(), 3); // svg + defs + rect
 
     // Set an attr
@@ -74,14 +74,14 @@ fn undo_redo_integrity() {
         value: AttrValue::Str("#ff0000".to_string()),
         old_value: None,
     };
-    let undo_set = set_cmd.execute(&mut doc);
+    let undo_set = set_cmd.execute(&mut doc).unwrap();
 
     // Undo the set
-    undo_set.execute(&mut doc);
+    undo_set.execute(&mut doc).unwrap();
     assert!(doc.get(rect_id).unwrap().get_attr(&AttrKey::Fill).is_none());
 
     // Undo the insert
-    undo_cmd.execute(&mut doc);
+    undo_cmd.execute(&mut doc).unwrap();
     assert_eq!(doc.node_count(), 2); // svg + defs
 }
 
@@ -144,11 +144,13 @@ fn data_binding_evaluation() {
                 field: "w".to_string(),
                 attr: "width".to_string(),
                 transform: None,
+                expr: None,
             },
             FieldMapping {
                 field: "color".to_string(),
                 attr: "fill".to_string(),
                 transform: None,
+                expr: None,
             },
         ],
         fallback: None,
@@ -380,7 +382,7 @@ fn batch_set_attrs_undo_as_single_step() {
         ],
     };
 
-    let undo = batch.execute(&mut doc);
+    let undo = batch.execute(&mut doc).unwrap();
 
     // Verify batch applied
     assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::X), 50.0);
@@ -388,7 +390,7 @@ fn batch_set_attrs_undo_as_single_step() {
     assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::Width), 200.0);
 
     // Undo entire batch as one step
-    undo.execute(&mut doc);
+    undo.execute(&mut doc).unwrap();
     assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::X), 10.0);
     assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::Y), 20.0);
     assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::Width), 100.0);

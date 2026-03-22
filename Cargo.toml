@@ -26,7 +26,9 @@ svg-effects = { path = "crates/svg-effects" }
 svg-layout = { path = "crates/svg-layout" }
 svg-runtime = { path = "crates/svg-runtime" }
 
-# Forge dependencies (local path — switch to git once repo is public)
+# Forge dependencies (local path — requires `forge` repo cloned as sibling directory)
+# To build: git clone <forge-repo-url> ../forge
+# TODO: switch to git deps once forge repo has a public remote
 forge-math = { path = "../forge/crates/forge-math" }
 forge-core = { path = "../forge/crates/forge-core" }
 

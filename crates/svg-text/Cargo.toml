@@ -5,5 +5,6 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+svg-doc.workspace = true
 forge-math.workspace = true
 serde.workspace = true

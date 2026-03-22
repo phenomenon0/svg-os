@@ -24,6 +24,7 @@ pub enum SvgTag {
     // Text
     Text,
     TSpan,
+    TextPath,
 
     // Media
     Image,
@@ -72,6 +73,7 @@ impl SvgTag {
             "path" => Self::Path,
             "text" => Self::Text,
             "tspan" => Self::TSpan,
+            "textPath" => Self::TextPath,
             "image" => Self::Image,
             "foreignObject" => Self::ForeignObject,
             "linearGradient" => Self::LinearGradient,
@@ -110,6 +112,7 @@ impl SvgTag {
             Self::Path => "path",
             Self::Text => "text",
             Self::TSpan => "tspan",
+            Self::TextPath => "textPath",
             Self::Image => "image",
             Self::ForeignObject => "foreignObject",
             Self::LinearGradient => "linearGradient",

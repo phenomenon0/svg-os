@@ -3,6 +3,9 @@
 use svg_doc::{Document, NodeId, AttrKey, AttrValue};
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
+use std::collections::HashMap;
+
+use crate::expr::{CompiledExpr, EvalContext};
 
 /// Where data comes from.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,12 +28,19 @@ pub enum DataSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldMapping {
     /// JSONPath-like selector into the data (e.g., "name", "stats.score").
+    /// Ignored when `expr` is set.
+    #[serde(default)]
     pub field: String,
     /// The SVG attribute to set.
     pub attr: String,
-    /// Optional transform expression (e.g., "value + 'px'", "value * 2").
+    /// Optional transform expression applied to the resolved field value.
+    /// The `value` keyword refers to the resolved field.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transform: Option<String>,
+    /// Full expression (replaces field+transform). When set, `field` is ignored
+    /// and the expression has full access to the data via `$`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expr: Option<String>,
 }
 
 /// A binding between a data source and a document node.
@@ -48,15 +58,33 @@ pub struct Binding {
 }
 
 /// The binding engine: manages all active data bindings.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct BindingEngine {
     bindings: Vec<Binding>,
+    /// Cache of compiled expressions keyed by source string.
+    #[allow(dead_code)]
+    expr_cache: HashMap<String, CompiledExpr>,
+}
+
+// Custom Serialize/Deserialize that skips expr_cache
+impl Serialize for BindingEngine {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.bindings.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BindingEngine {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let bindings = Vec::<Binding>::deserialize(deserializer)?;
+        Ok(Self { bindings, expr_cache: HashMap::new() })
+    }
 }
 
 impl BindingEngine {
     pub fn new() -> Self {
         Self {
             bindings: Vec::new(),
+            expr_cache: HashMap::new(),
         }
     }
 
@@ -75,6 +103,39 @@ impl BindingEngine {
         &self.bindings
     }
 
+    /// Pre-compile all expressions in registered bindings.
+    /// Call once before evaluate() in batch scenarios for performance.
+    pub fn compile_expressions(&mut self) {
+        let mut to_compile: Vec<String> = Vec::new();
+        for binding in &self.bindings {
+            if let DataSource::Expression { expr } = &binding.source {
+                to_compile.push(expr.clone());
+            }
+            for mapping in &binding.mappings {
+                if let Some(expr) = &mapping.expr {
+                    to_compile.push(expr.clone());
+                }
+                if let Some(transform) = &mapping.transform {
+                    to_compile.push(transform.clone());
+                }
+            }
+        }
+        for expr_str in to_compile {
+            if !self.expr_cache.contains_key(&expr_str) {
+                if let Ok(compiled) = CompiledExpr::parse(&expr_str) {
+                    self.expr_cache.insert(expr_str, compiled);
+                }
+            }
+        }
+    }
+
+    fn get_or_compile(&self, expr_str: &str) -> Option<CompiledExpr> {
+        if let Some(cached) = self.expr_cache.get(expr_str) {
+            return Some(cached.clone());
+        }
+        CompiledExpr::parse(expr_str).ok()
+    }
+
     /// Evaluate all bindings against provided data, updating the document.
     ///
     /// `data` is a JSON object where keys match data source identifiers.
@@ -84,15 +145,28 @@ impl BindingEngine {
             let source_data = match &binding.source {
                 DataSource::Static { value } => value.clone(),
                 DataSource::Json { url, .. } => {
-                    // Look up data by URL key
                     data.get(url).cloned().unwrap_or(Value::Null)
                 }
                 DataSource::Csv { url } => {
                     data.get(url).cloned().unwrap_or(Value::Null)
                 }
                 DataSource::Expression { expr } => {
-                    // Simple expression evaluation: just look up the field
-                    resolve_field(data, expr).unwrap_or(Value::Null)
+                    // Evaluate expression against data context
+                    if let Some(compiled) = self.get_or_compile(expr) {
+                        let ctx = EvalContext {
+                            data,
+                            value: None,
+                            row_index: None,
+                            row_count: None,
+                        };
+                        match compiled.eval(&ctx) {
+                            Ok(val) => json_from_expr_value(&val),
+                            Err(_) => resolve_field(data, expr).unwrap_or(Value::Null),
+                        }
+                    } else {
+                        // Fallback: treat as field path
+                        resolve_field(data, expr).unwrap_or(Value::Null)
+                    }
                 }
             };
 
@@ -107,13 +181,64 @@ impl BindingEngine {
             }
 
             for mapping in &binding.mappings {
-                let field_value = resolve_field(&effective_data, &mapping.field);
+                let attr_str = if let Some(expr_str) = &mapping.expr {
+                    // Expression-only path: full access to $ data
+                    if let Some(compiled) = self.get_or_compile(expr_str) {
+                        let ctx = EvalContext {
+                            data: &effective_data,
+                            value: None,
+                            row_index: None,
+                            row_count: None,
+                        };
+                        match compiled.eval_to_string(&ctx) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                log::warn!("Expression error in '{}': {}", expr_str, e);
+                                continue;
+                            }
+                        }
+                    } else {
+                        log::warn!("Failed to parse expression: {}", expr_str);
+                        continue;
+                    }
+                } else {
+                    // Legacy path: resolve field, then apply transform
+                    let field_value = resolve_field(&effective_data, &mapping.field);
+                    match field_value {
+                        Some(value) => self.apply_transform(&effective_data, &value, &mapping.transform),
+                        None => continue,
+                    }
+                };
 
-                if let Some(value) = field_value {
-                    let attr_str = apply_transform(&value, &mapping.transform);
-                    let attr_key = AttrKey::from_name(&mapping.attr);
-                    let attr_value = AttrValue::parse(&attr_key, &attr_str);
-                    doc.set_attr(binding.target, attr_key, attr_value);
+                let attr_key = AttrKey::from_name(&mapping.attr);
+                let attr_value = AttrValue::parse(&attr_key, &attr_str);
+                doc.set_attr(binding.target, attr_key, attr_value);
+            }
+        }
+    }
+
+    /// Apply a transform expression to a resolved field value.
+    /// Uses the expression engine with `value` bound to the field value.
+    fn apply_transform(&self, data: &Value, field_value: &Value, transform: &Option<String>) -> String {
+        let base = value_to_string(field_value);
+
+        match transform {
+            None => base,
+            Some(expr_str) => {
+                // Try expression engine (handles both new and legacy syntax)
+                if let Some(compiled) = self.get_or_compile(expr_str) {
+                    let ctx = EvalContext {
+                        data,
+                        value: Some(field_value),
+                        row_index: None,
+                        row_count: None,
+                    };
+                    match compiled.eval_to_string(&ctx) {
+                        Ok(s) => s,
+                        Err(_) => base, // Graceful fallback
+                    }
+                } else {
+                    base
                 }
             }
         }
@@ -121,7 +246,6 @@ impl BindingEngine {
 }
 
 /// Resolve a dot-separated field path in a JSON value.
-/// E.g., "stats.score" resolves data["stats"]["score"].
 fn resolve_field(data: &Value, path: &str) -> Option<Value> {
     let mut current = data;
     for part in path.split('.') {
@@ -139,46 +263,35 @@ fn resolve_field(data: &Value, path: &str) -> Option<Value> {
     Some(current.clone())
 }
 
-/// Apply a simple transform to a value.
-fn apply_transform(value: &Value, transform: &Option<String>) -> String {
-    let base = match value {
+fn value_to_string(value: &Value) -> String {
+    match value {
         Value::String(s) => s.clone(),
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Null => String::new(),
         other => other.to_string(),
-    };
-
-    match transform {
-        Some(expr) => {
-            // Simple transforms: "value + 'suffix'", "value * N", etc.
-            if expr.contains("+ '") || expr.contains("+ \"") {
-                // String concatenation: extract suffix
-                let suffix = expr
-                    .split('\'')
-                    .nth(1)
-                    .or_else(|| expr.split('"').nth(1))
-                    .unwrap_or("");
-                format!("{}{}", base, suffix)
-            } else if expr.contains("'") && expr.contains("+ value") {
-                // Prefix + value
-                let prefix = expr.split('\'').nth(1).unwrap_or("");
-                format!("{}{}", prefix, base)
-            } else if let Some(stripped) = expr.strip_prefix("value * ") {
-                // Multiplication
-                if let (Ok(v), Ok(m)) = (base.parse::<f64>(), stripped.parse::<f64>()) {
-                    format_f64(v * m)
-                } else {
-                    base
-                }
-            } else {
-                base
-            }
-        }
-        None => base,
     }
 }
 
+fn json_from_expr_value(val: &crate::expr::ExprValue) -> Value {
+    use crate::expr::ExprValue;
+    match val {
+        ExprValue::Num(n) => {
+            serde_json::Number::from_f64(*n)
+                .map(Value::Number)
+                .unwrap_or(Value::Null)
+        }
+        ExprValue::Str(s) => Value::String(s.clone()),
+        ExprValue::Bool(b) => Value::Bool(*b),
+        ExprValue::Null => Value::Null,
+        ExprValue::Array(items) => {
+            Value::Array(items.iter().map(json_from_expr_value).collect())
+        }
+    }
+}
+
+// Kept for potential future use but currently all formatting goes through expr engine
+#[allow(dead_code)]
 fn format_f64(v: f64) -> String {
     if v == v.floor() && v.abs() < 1e9 {
         format!("{}", v as i64)
@@ -228,6 +341,7 @@ mod tests {
                 field: "label".to_string(),
                 attr: "data-text-content".to_string(),
                 transform: None,
+                expr: None,
             }],
             fallback: None,
         });
@@ -243,15 +357,142 @@ mod tests {
 
     #[test]
     fn evaluate_with_transform() {
-        let value = json!(100);
-        let result = apply_transform(&value, &Some("value * 2".to_string()));
-        assert_eq!(result, "200");
+        let mut doc = Document::new();
+        let root = doc.root;
+        let mut rect = Node::new(SvgTag::Rect);
+        rect.set_attr(AttrKey::Width, AttrValue::F32(50.0));
+        let rect_id = rect.id;
+        doc.insert_node(root, 1, rect);
+
+        let mut engine = BindingEngine::new();
+        engine.bind(Binding {
+            source: DataSource::Static {
+                value: json!({ "w": 100 }),
+            },
+            target: rect_id,
+            mappings: vec![FieldMapping {
+                field: "w".to_string(),
+                attr: "width".to_string(),
+                transform: Some("value * 2".to_string()),
+                expr: None,
+            }],
+            fallback: None,
+        });
+
+        engine.evaluate(&mut doc, &json!({}));
+        assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::Width), 200.0);
     }
 
     #[test]
-    fn evaluate_string_concat() {
-        let value = json!(42);
-        let result = apply_transform(&value, &Some("value + 'px'".to_string()));
-        assert_eq!(result, "42px");
+    fn evaluate_string_concat_transform() {
+        let mut doc = Document::new();
+        let root = doc.root;
+        let mut text = Node::new(SvgTag::Text);
+        let text_id = text.id;
+        doc.insert_node(root, 1, text);
+
+        let mut engine = BindingEngine::new();
+        engine.bind(Binding {
+            source: DataSource::Static {
+                value: json!({ "n": 42 }),
+            },
+            target: text_id,
+            mappings: vec![FieldMapping {
+                field: "n".to_string(),
+                attr: "data-text-content".to_string(),
+                transform: Some("value + 'px'".to_string()),
+                expr: None,
+            }],
+            fallback: None,
+        });
+
+        engine.evaluate(&mut doc, &json!({}));
+        assert_eq!(
+            doc.get(text_id).unwrap().get_string(&AttrKey::TextContent),
+            Some("42px")
+        );
+    }
+
+    #[test]
+    fn evaluate_expr_field() {
+        let mut doc = Document::new();
+        let root = doc.root;
+        let mut rect = Node::new(SvgTag::Rect);
+        let rect_id = rect.id;
+        doc.insert_node(root, 1, rect);
+
+        let mut engine = BindingEngine::new();
+        engine.bind(Binding {
+            source: DataSource::Static {
+                value: json!({ "score": 95, "max": 100 }),
+            },
+            target: rect_id,
+            mappings: vec![FieldMapping {
+                field: String::new(),
+                attr: "width".to_string(),
+                transform: None,
+                expr: Some("$.score / $.max * 200".to_string()),
+            }],
+            fallback: None,
+        });
+
+        engine.evaluate(&mut doc, &json!({}));
+        assert_eq!(doc.get(rect_id).unwrap().get_f32(&AttrKey::Width), 190.0);
+    }
+
+    #[test]
+    fn evaluate_expr_conditional_fill() {
+        let mut doc = Document::new();
+        let root = doc.root;
+        let mut rect = Node::new(SvgTag::Rect);
+        let rect_id = rect.id;
+        doc.insert_node(root, 1, rect);
+
+        let mut engine = BindingEngine::new();
+        engine.bind(Binding {
+            source: DataSource::Static {
+                value: json!({ "rating": 92 }),
+            },
+            target: rect_id,
+            mappings: vec![FieldMapping {
+                field: String::new(),
+                attr: "fill".to_string(),
+                transform: None,
+                expr: Some("if($.rating > 90, '#gold', '#silver')".to_string()),
+            }],
+            fallback: None,
+        });
+
+        engine.evaluate(&mut doc, &json!({}));
+        let fill = doc.get(rect_id).unwrap().get_attr(&AttrKey::Fill);
+        assert!(fill.is_some());
+    }
+
+    #[test]
+    fn compile_expressions_caches() {
+        let mut engine = BindingEngine::new();
+        engine.bind(Binding {
+            source: DataSource::Static { value: json!({"x": 1}) },
+            target: NodeId::new(),
+            mappings: vec![
+                FieldMapping {
+                    field: String::new(),
+                    attr: "width".to_string(),
+                    transform: None,
+                    expr: Some("$.x * 2".to_string()),
+                },
+                FieldMapping {
+                    field: "x".to_string(),
+                    attr: "height".to_string(),
+                    transform: Some("value + 10".to_string()),
+                    expr: None,
+                },
+            ],
+            fallback: None,
+        });
+
+        engine.compile_expressions();
+        assert!(engine.expr_cache.contains_key("$.x * 2"));
+        assert!(engine.expr_cache.contains_key("value + 10"));
     }
 }

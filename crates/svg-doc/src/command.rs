@@ -6,6 +6,23 @@ use crate::attr::{AttrKey, AttrValue};
 use crate::document::Document;
 use serde::{Serialize, Deserialize};
 
+/// Errors from command execution.
+#[derive(Debug, Clone)]
+pub enum CommandError {
+    /// Target node does not exist in the document.
+    NodeNotFound(NodeId),
+}
+
+impl std::fmt::Display for CommandError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NodeNotFound(id) => write!(f, "node not found: {}", id),
+        }
+    }
+}
+
+impl std::error::Error for CommandError {}
+
 /// A reversible command that mutates the SVG document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SvgCommand {
@@ -63,6 +80,12 @@ pub enum SvgCommand {
         #[serde(default)]
         old_order: Vec<NodeId>,
     },
+    /// Re-insert an entire subtree (used as undo for RemoveNode).
+    InsertSubtree {
+        nodes: Vec<Node>,
+        parent: NodeId,
+        index: usize,
+    },
     /// Batch of commands executed atomically.
     Batch {
         commands: Vec<SvgCommand>,
@@ -71,49 +94,79 @@ pub enum SvgCommand {
 
 impl SvgCommand {
     /// Apply this command to a document, filling in "old" fields for undo.
-    pub fn apply(&self, doc: &mut Document) {
+    pub fn apply(&self, doc: &mut Document) -> Result<(), CommandError> {
         match self {
             Self::InsertNode { node, parent, index } => {
+                if doc.get(*parent).is_none() {
+                    return Err(CommandError::NodeNotFound(*parent));
+                }
                 doc.insert_node(*parent, *index, node.clone());
             }
             Self::RemoveNode { id, .. } => {
+                if doc.get(*id).is_none() {
+                    return Err(CommandError::NodeNotFound(*id));
+                }
                 doc.remove_subtree(*id);
             }
             Self::SetAttr { id, key, value, .. } => {
+                if doc.get(*id).is_none() {
+                    return Err(CommandError::NodeNotFound(*id));
+                }
                 doc.set_attr(*id, *key, value.clone());
             }
             Self::RemoveAttr { id, key, .. } => {
+                if doc.get(*id).is_none() {
+                    return Err(CommandError::NodeNotFound(*id));
+                }
                 doc.remove_attr(*id, key);
             }
+            Self::InsertSubtree { nodes, parent, index } => {
+                if doc.get(*parent).is_none() {
+                    return Err(CommandError::NodeNotFound(*parent));
+                }
+                doc.insert_subtree(*parent, *index, nodes.clone());
+            }
             Self::Reparent { id, new_parent, index, .. } => {
+                if doc.get(*id).is_none() {
+                    return Err(CommandError::NodeNotFound(*id));
+                }
+                if doc.get(*new_parent).is_none() {
+                    return Err(CommandError::NodeNotFound(*new_parent));
+                }
                 doc.reparent(*id, *new_parent, *index);
             }
             Self::Reorder { parent, new_order, .. } => {
+                if doc.get(*parent).is_none() {
+                    return Err(CommandError::NodeNotFound(*parent));
+                }
                 doc.reorder_children(*parent, new_order.clone());
             }
             Self::Batch { commands } => {
                 for cmd in commands {
-                    cmd.apply(doc);
+                    cmd.apply(doc)?;
                 }
             }
         }
+        Ok(())
     }
 
     /// Execute the command, capturing state needed for undo, and return the inverse.
-    pub fn execute(self, doc: &mut Document) -> SvgCommand {
+    pub fn execute(self, doc: &mut Document) -> Result<SvgCommand, CommandError> {
         match self {
             Self::InsertNode { node, parent, index } => {
+                if doc.get(parent).is_none() {
+                    return Err(CommandError::NodeNotFound(parent));
+                }
                 let id = node.id;
                 doc.insert_node(parent, index, node.clone());
-                SvgCommand::RemoveNode {
+                Ok(SvgCommand::RemoveNode {
                     id,
                     removed_nodes: vec![node],
                     parent: Some(parent),
                     index,
-                }
+                })
             }
             Self::RemoveNode { id, .. } => {
-                // Capture parent info before removal
                 let (parent, index) = doc.get(id)
                     .and_then(|n| {
                         n.parent.and_then(|pid| {
@@ -123,25 +176,40 @@ impl SvgCommand {
                             })
                         })
                     })
-                    .unwrap_or((doc.root, 0));
+                    .ok_or(CommandError::NodeNotFound(id))?;
 
                 let removed = doc.remove_subtree(id);
 
-                // Inverse: re-insert all nodes
-                if let Some(root_node) = removed.first() {
-                    SvgCommand::InsertNode {
-                        node: root_node.clone(),
-                        parent,
+                Ok(SvgCommand::InsertSubtree {
+                    nodes: removed,
+                    parent,
+                    index,
+                })
+            }
+            Self::InsertSubtree { nodes, parent, index } => {
+                if doc.get(parent).is_none() {
+                    return Err(CommandError::NodeNotFound(parent));
+                }
+                if let Some(first) = nodes.first() {
+                    let id = first.id;
+                    doc.insert_subtree(parent, index, nodes.clone());
+                    Ok(SvgCommand::RemoveNode {
+                        id,
+                        removed_nodes: nodes,
+                        parent: Some(parent),
                         index,
-                    }
+                    })
                 } else {
-                    SvgCommand::Batch { commands: vec![] }
+                    Ok(SvgCommand::Batch { commands: vec![] })
                 }
             }
             Self::SetAttr { id, key, value, .. } => {
+                if doc.get(id).is_none() {
+                    return Err(CommandError::NodeNotFound(id));
+                }
                 let old_value = doc.get(id).and_then(|n| n.get_attr(&key).cloned());
                 doc.set_attr(id, key, value.clone());
-                match old_value {
+                Ok(match old_value {
                     Some(old) => SvgCommand::SetAttr {
                         id,
                         key,
@@ -153,11 +221,14 @@ impl SvgCommand {
                         key,
                         old_value: Some(value),
                     },
-                }
+                })
             }
             Self::RemoveAttr { id, key, .. } => {
+                if doc.get(id).is_none() {
+                    return Err(CommandError::NodeNotFound(id));
+                }
                 let old_value = doc.remove_attr(id, &key);
-                match old_value {
+                Ok(match old_value {
                     Some(old) => SvgCommand::SetAttr {
                         id,
                         key,
@@ -165,9 +236,15 @@ impl SvgCommand {
                         old_value: None,
                     },
                     None => SvgCommand::Batch { commands: vec![] },
-                }
+                })
             }
             Self::Reparent { id, new_parent, index, .. } => {
+                if doc.get(id).is_none() {
+                    return Err(CommandError::NodeNotFound(id));
+                }
+                if doc.get(new_parent).is_none() {
+                    return Err(CommandError::NodeNotFound(new_parent));
+                }
                 let (old_parent, old_index) = doc.get(id)
                     .and_then(|n| {
                         n.parent.and_then(|pid| {
@@ -181,31 +258,34 @@ impl SvgCommand {
 
                 doc.reparent(id, new_parent, index);
 
-                SvgCommand::Reparent {
+                Ok(SvgCommand::Reparent {
                     id,
                     new_parent: old_parent,
                     index: old_index,
                     old_parent: Some(new_parent),
                     old_index: index,
-                }
+                })
             }
             Self::Reorder { parent, new_order, .. } => {
+                if doc.get(parent).is_none() {
+                    return Err(CommandError::NodeNotFound(parent));
+                }
                 let old_order = doc.children(parent);
                 doc.reorder_children(parent, new_order.clone());
-                SvgCommand::Reorder {
+                Ok(SvgCommand::Reorder {
                     parent,
                     new_order: old_order,
                     old_order: new_order,
-                }
+                })
             }
             Self::Batch { commands } => {
-                let inverses: Vec<SvgCommand> = commands
-                    .into_iter()
-                    .map(|cmd| cmd.execute(doc))
-                    .collect();
-                SvgCommand::Batch {
-                    commands: inverses.into_iter().rev().collect(),
+                let mut inverses = Vec::new();
+                for cmd in commands {
+                    inverses.push(cmd.execute(doc)?);
                 }
+                Ok(SvgCommand::Batch {
+                    commands: inverses.into_iter().rev().collect(),
+                })
             }
         }
     }
@@ -231,7 +311,7 @@ mod tests {
         let root = doc.root;
 
         let node = Node::new(SvgTag::Rect);
-        let rect_id = node.id;
+        let _rect_id = node.id;
         let cmd = SvgCommand::InsertNode {
             node,
             parent: root,
@@ -239,11 +319,11 @@ mod tests {
         };
 
         // Execute
-        let undo_cmd = cmd.execute(&mut doc);
+        let undo_cmd = cmd.execute(&mut doc).unwrap();
         assert_eq!(doc.node_count(), 3); // svg + defs + rect
 
         // Undo
-        let _redo_cmd = undo_cmd.execute(&mut doc);
+        let _redo_cmd = undo_cmd.execute(&mut doc).unwrap();
         assert_eq!(doc.node_count(), 2); // svg + defs
     }
 
@@ -263,7 +343,7 @@ mod tests {
             value: AttrValue::Str("red".to_string()),
             old_value: None,
         };
-        let undo = cmd.execute(&mut doc);
+        let undo = cmd.execute(&mut doc).unwrap();
 
         assert_eq!(
             doc.get(rect_id).unwrap().get_attr(&AttrKey::Fill),
@@ -271,8 +351,52 @@ mod tests {
         );
 
         // Undo — should remove the attr since it didn't exist before
-        undo.execute(&mut doc);
+        undo.execute(&mut doc).unwrap();
         assert!(doc.get(rect_id).unwrap().get_attr(&AttrKey::Fill).is_none());
+    }
+
+    #[test]
+    fn remove_subtree_undo_restores_children() {
+        let mut doc = Document::new();
+        let root = doc.root;
+
+        // Create group with two children
+        let group = Node::new(SvgTag::G);
+        let group_id = group.id;
+        doc.insert_node(root, 1, group);
+
+        let rect = Node::new(SvgTag::Rect);
+        let rect_id = rect.id;
+        doc.insert_node(group_id, 0, rect);
+
+        let circle = Node::new(SvgTag::Circle);
+        let circle_id = circle.id;
+        doc.insert_node(group_id, 1, circle);
+
+        assert_eq!(doc.node_count(), 5); // svg + defs + group + rect + circle
+
+        // Remove the group (and its subtree)
+        let cmd = SvgCommand::RemoveNode {
+            id: group_id,
+            removed_nodes: vec![],
+            parent: None,
+            index: 0,
+        };
+        let undo_cmd = cmd.execute(&mut doc).unwrap();
+        assert_eq!(doc.node_count(), 2); // svg + defs
+
+        // Undo — should restore group AND both children
+        let _redo_cmd = undo_cmd.execute(&mut doc).unwrap();
+        assert_eq!(doc.node_count(), 5);
+        assert!(doc.get(group_id).is_some());
+        assert!(doc.get(rect_id).is_some());
+        assert!(doc.get(circle_id).is_some());
+
+        // Verify parent-child relationships restored
+        let group_node = doc.get(group_id).unwrap();
+        assert_eq!(group_node.children.len(), 2);
+        assert!(group_node.children.contains(&rect_id));
+        assert!(group_node.children.contains(&circle_id));
     }
 
     #[test]
@@ -282,8 +406,8 @@ mod tests {
 
         let n1 = Node::new(SvgTag::Rect);
         let n2 = Node::new(SvgTag::Circle);
-        let id1 = n1.id;
-        let id2 = n2.id;
+        let _id1 = n1.id;
+        let _id2 = n2.id;
 
         let batch = SvgCommand::Batch {
             commands: vec![
@@ -292,10 +416,10 @@ mod tests {
             ],
         };
 
-        let undo = batch.execute(&mut doc);
+        let undo = batch.execute(&mut doc).unwrap();
         assert_eq!(doc.node_count(), 4);
 
-        undo.execute(&mut doc);
+        undo.execute(&mut doc).unwrap();
         assert_eq!(doc.node_count(), 2);
     }
 }

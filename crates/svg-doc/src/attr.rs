@@ -50,6 +50,15 @@ pub enum AttrKey {
     TextAnchor,
     DominantBaseline,
     TextContent,
+    LetterSpacing,
+    WordSpacing,
+    TextDecoration,
+    TextLength,
+    LengthAdjust,
+    WritingMode,
+    Direction,
+    BaselineShift,
+    LineHeight,
 
     // References
     Href,
@@ -130,6 +139,15 @@ impl AttrKey {
             "font-style" => Self::FontStyle,
             "text-anchor" => Self::TextAnchor,
             "dominant-baseline" => Self::DominantBaseline,
+            "letter-spacing" => Self::LetterSpacing,
+            "word-spacing" => Self::WordSpacing,
+            "text-decoration" => Self::TextDecoration,
+            "textLength" => Self::TextLength,
+            "lengthAdjust" => Self::LengthAdjust,
+            "writing-mode" => Self::WritingMode,
+            "direction" => Self::Direction,
+            "baseline-shift" => Self::BaselineShift,
+            "line-height" => Self::LineHeight,
             "href" | "xlink:href" => Self::Href,
             "clip-path" => Self::ClipPathRef,
             "mask" => Self::MaskRef,
@@ -199,6 +217,15 @@ impl AttrKey {
             Self::FontStyle => "font-style",
             Self::TextAnchor => "text-anchor",
             Self::DominantBaseline => "dominant-baseline",
+            Self::LetterSpacing => "letter-spacing",
+            Self::WordSpacing => "word-spacing",
+            Self::TextDecoration => "text-decoration",
+            Self::TextLength => "textLength",
+            Self::LengthAdjust => "lengthAdjust",
+            Self::WritingMode => "writing-mode",
+            Self::Direction => "direction",
+            Self::BaselineShift => "baseline-shift",
+            Self::LineHeight => "line-height",
             Self::Href => "href",
             Self::ClipPathRef => "clip-path",
             Self::MaskRef => "mask",
@@ -331,7 +358,10 @@ impl AttrValue {
                 value.parse::<f32>().map(Self::F32).unwrap_or(Self::Str(value.to_string()))
             }
 
-            AttrKey::FontSize => parse_length_or_f32(value),
+            AttrKey::FontSize | AttrKey::LetterSpacing | AttrKey::WordSpacing
+            | AttrKey::TextLength | AttrKey::BaselineShift | AttrKey::LineHeight => {
+                parse_length_or_f32(value)
+            }
 
             AttrKey::D => {
                 let path = svg_geom::path_parse(value);
