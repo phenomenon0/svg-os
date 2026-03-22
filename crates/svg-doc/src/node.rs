@@ -34,6 +34,26 @@ impl std::fmt::Display for NodeId {
     }
 }
 
+/// Direction hint for connector routing from a port.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PortDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+/// A port (anchor point) on a node for diagram connectors.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Port {
+    /// Port identifier (unique within the node).
+    pub name: String,
+    /// Position as fraction of node bounds (0.0..1.0, 0.0..1.0).
+    pub position: (f32, f32),
+    /// Direction hint for routing (which way a connector exits).
+    pub direction: PortDirection,
+}
+
 /// A single node in the SVG document tree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
@@ -53,6 +73,9 @@ pub struct Node {
     pub visible: bool,
     /// Lock flag (prevents editing).
     pub locked: bool,
+    /// Diagram ports (anchor points for connectors).
+    #[serde(default)]
+    pub ports: Vec<Port>,
 }
 
 impl Node {
@@ -67,6 +90,7 @@ impl Node {
             name: None,
             visible: true,
             locked: false,
+            ports: Vec::new(),
         }
     }
 
@@ -81,7 +105,18 @@ impl Node {
             name: None,
             visible: true,
             locked: false,
+            ports: Vec::new(),
         }
+    }
+
+    /// Add the four cardinal ports (top, right, bottom, left).
+    pub fn add_default_ports(&mut self) {
+        self.ports = vec![
+            Port { name: "top".into(), position: (0.5, 0.0), direction: PortDirection::Up },
+            Port { name: "right".into(), position: (1.0, 0.5), direction: PortDirection::Right },
+            Port { name: "bottom".into(), position: (0.5, 1.0), direction: PortDirection::Down },
+            Port { name: "left".into(), position: (0.0, 0.5), direction: PortDirection::Left },
+        ];
     }
 
     /// Set an attribute.

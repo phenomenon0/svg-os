@@ -11,12 +11,14 @@ import {
   importSvg, exportSvg, getElement,
   bind, evaluateBindings, applyTheme, repeatTemplate,
   cloneNode, groupNodes, ungroupNode,
+  addDefaultPorts, getPorts, addConnector, updateConnectors, autoLayout,
+  generateDiagram,
 } from "@svg-os/bridge";
-import type { Binding, Theme } from "@svg-os/bridge";
+import type { Binding, Theme, Port } from "@svg-os/bridge";
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-type Tool = "select" | "rect" | "ellipse" | "path" | "text";
+type Tool = "select" | "rect" | "ellipse" | "path" | "text" | "diagram-node" | "connector";
 
 let currentTool: Tool = "select";
 let selectedNodeId: string | null = null;
@@ -35,6 +37,9 @@ let activeBindings: Array<{ nodeId: string; field: string; attr: string }> = [];
 let clipboardNodeId: string | null = null;
 let gridSnap = false;
 let gridSize = 8;
+let isConnecting = false;
+let connectorSource: { nodeId: string; portName: string; pt: { x: number; y: number } } | null = null;
+let arrowheadCreated = false;
 
 const container = document.getElementById("canvas-container")!;
 const statusText = document.getElementById("status-text")!;
@@ -130,7 +135,7 @@ function setupPanelTabs() {
 // ── Tools ───────────────────────────────────────────────────────────────────
 
 function setupTools() {
-  const tools: Tool[] = ["select", "rect", "ellipse", "path", "text"];
+  const tools: Tool[] = ["select", "rect", "ellipse", "path", "text", "diagram-node", "connector"];
   for (const tool of tools) {
     document.getElementById(`tool-${tool}`)?.addEventListener("click", () => setTool(tool));
   }
@@ -179,6 +184,13 @@ function setupTools() {
     statusText.textContent = gridSnap ? `Grid snap ON (${gridSize}px)` : "Grid snap OFF";
     updateStatus();
   });
+
+  // Auto-layout button
+  document.getElementById("btn-layout")?.addEventListener("click", () => {
+    autoLayout({ direction: "TopToBottom", nodeGap: 40, layerGap: 80 });
+    fullRerender();
+    statusText.textContent = "Layout applied";
+  });
 }
 
 // ── Keyboard ────────────────────────────────────────────────────────────────
@@ -195,6 +207,8 @@ function setupKeyboard() {
         case "e": setTool("ellipse"); return;
         case "p": setTool("path"); return;
         case "t": setTool("text"); return;
+        case "n": setTool("diagram-node"); return;
+        case "w": setTool("connector"); return;
         case "delete": case "backspace":
           if (selectedNodeId) { removeNode(selectedNodeId); selectedNodeId = null; fullRerender(); }
           return;
@@ -261,6 +275,12 @@ function setTool(tool: Tool) {
   currentTool = tool;
   document.querySelectorAll(".toolbar button[id^='tool-']").forEach((b) => b.classList.remove("active"));
   document.getElementById(`tool-${tool}`)?.classList.add("active");
+  // Show port indicators when connector tool is active
+  if (tool === "connector") {
+    renderPortIndicators();
+  } else {
+    removePortIndicators();
+  }
 }
 
 // ── Group / Ungroup ─────────────────────────────────────────────────────────
@@ -454,6 +474,42 @@ function onPointerDown(e: PointerEvent) {
     selectNode(id);
     setTool("select");
     updateLayers();
+  } else if (currentTool === "diagram-node") {
+    // Create a diagram node: rect with label + default ports
+    const root = rootId();
+    const groupId = createNode(root, "g", {});
+    const rectId = createNode(groupId, "rect", {
+      x: String(snap(pt.x - 80)), y: String(snap(pt.y - 40)),
+      width: "160", height: "80",
+      fill: "#1e293b", stroke: "#475569", "stroke-width": "2", rx: "8",
+    });
+    createNode(groupId, "text", {
+      x: String(snap(pt.x)), y: String(snap(pt.y + 5)),
+      "font-family": "Inter, system-ui, sans-serif",
+      "font-size": "14", fill: "#e2e8f0",
+      "text-anchor": "middle",
+      "data-text-content": "Node",
+    });
+    // Set position on the group using the rect's position
+    setAttrsBatch(groupId, {
+      x: String(snap(pt.x - 80)), y: String(snap(pt.y - 40)),
+      width: "160", height: "80",
+    });
+    addDefaultPorts(groupId);
+    ensureArrowheadMarker();
+    render();
+    selectNode(groupId);
+    setTool("select");
+    updateLayers();
+  } else if (currentTool === "connector") {
+    // Check if clicking near a port
+    const hit = findNearestPort(pt, 16);
+    if (hit) {
+      isConnecting = true;
+      connectorSource = { nodeId: hit.nodeId, portName: hit.port.name, pt: hit.worldPos };
+      container.setPointerCapture(e.pointerId);
+      showConnectorPreview(hit.worldPos, pt);
+    }
   } else {
     const root = rootId();
     const s = 80;
@@ -489,6 +545,11 @@ function onPointerMove(e: PointerEvent) {
     applyViewTransform();
     return;
   }
+  if (isConnecting && connectorSource) {
+    const pt = getSvgPoint(e.clientX, e.clientY);
+    showConnectorPreview(connectorSource.pt, pt);
+    return;
+  }
   if (isResizing && selectedNodeId && resizeHandle) {
     const pt = getSvgPoint(e.clientX, e.clientY);
     const dx = pt.x - resizeStart.x;
@@ -513,6 +574,23 @@ function onPointerUp(e: PointerEvent) {
     container.style.cursor = "";
     return;
   }
+  if (isConnecting && connectorSource) {
+    const pt = getSvgPoint(e.clientX, e.clientY);
+    const hit = findNearestPort(pt, 16);
+    if (hit && hit.nodeId !== connectorSource.nodeId) {
+      addConnector({
+        from: [connectorSource.nodeId, connectorSource.portName],
+        to: [hit.nodeId, hit.port.name],
+        routing: "Straight",
+      });
+      render();
+    }
+    isConnecting = false;
+    connectorSource = null;
+    removeConnectorPreview();
+    container.releasePointerCapture(e.pointerId);
+    return;
+  }
   if (isResizing && selectedNodeId && resizeHandle) {
     const pt = getSvgPoint(e.clientX, e.clientY);
     const dx = pt.x - resizeStart.x;
@@ -535,6 +613,7 @@ function onPointerUp(e: PointerEvent) {
         [keys.x]: String(snap(dragNodeStart.x + dx)),
         [keys.y]: String(snap(dragNodeStart.y + dy)),
       });
+      updateConnectors();
       render();
     }
   }
@@ -543,6 +622,154 @@ function onPointerUp(e: PointerEvent) {
   container.releasePointerCapture(e.pointerId);
   updateUndoRedoButtons();
   if (selectedNodeId) showPropsFor(selectedNodeId);
+}
+
+// ── Diagram helpers: ports, connectors ───────────────────────────────────────
+
+interface PortHit {
+  nodeId: string;
+  port: Port;
+  worldPos: { x: number; y: number };
+}
+
+/** Find the nearest port to a point within maxDist pixels. */
+function findNearestPort(pt: { x: number; y: number }, maxDist: number): PortHit | null {
+  const svg = container.querySelector("svg");
+  if (!svg) return null;
+
+  let best: PortHit | null = null;
+  let bestDist = maxDist;
+
+  // Find all elements with data-node-id and check for ports
+  const elements = svg.querySelectorAll("[data-node-id]");
+  for (const el of elements) {
+    const nodeId = el.getAttribute("data-node-id");
+    if (!nodeId) continue;
+
+    let ports: Port[];
+    try {
+      ports = getPorts(nodeId);
+    } catch {
+      continue;
+    }
+    if (ports.length === 0) continue;
+
+    // Get element bounds
+    const bbox = (el as SVGGraphicsElement).getBBox?.();
+    if (!bbox) continue;
+
+    for (const port of ports) {
+      const px = bbox.x + port.position[0] * bbox.width;
+      const py = bbox.y + port.position[1] * bbox.height;
+      const dist = Math.sqrt((px - pt.x) ** 2 + (py - pt.y) ** 2);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { nodeId, port, worldPos: { x: px, y: py } };
+      }
+    }
+  }
+
+  return best;
+}
+
+/** Ensure the arrowhead marker exists in <defs>. */
+function ensureArrowheadMarker(): void {
+  if (arrowheadCreated) return;
+  const svg = container.querySelector("svg");
+  if (!svg) return;
+
+  // Check if it already exists
+  if (svg.querySelector("#arrowhead")) {
+    arrowheadCreated = true;
+    return;
+  }
+
+  const defs = defsId();
+  const markerId = createNode(defs, "marker" as any, {
+    id: "arrowhead",
+    viewBox: "0 0 10 10",
+    refX: "10", refY: "5",
+    markerWidth: "8", markerHeight: "8",
+    orient: "auto-start-reverse",
+  });
+  createNode(markerId, "path", {
+    d: "M 0 0 L 10 5 L 0 10 Z",
+    fill: "#64748b",
+  });
+  arrowheadCreated = true;
+}
+
+/** Show a temporary connector line while dragging. */
+function showConnectorPreview(from: { x: number; y: number }, to: { x: number; y: number }): void {
+  removeConnectorPreview();
+  const svg = container.querySelector("svg");
+  if (!svg) return;
+
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("x1", String(from.x));
+  line.setAttribute("y1", String(from.y));
+  line.setAttribute("x2", String(to.x));
+  line.setAttribute("y2", String(to.y));
+  line.setAttribute("stroke", "#f59e0b");
+  line.setAttribute("stroke-width", "2");
+  line.setAttribute("stroke-dasharray", "4,4");
+  line.setAttribute("data-connector-preview", "true");
+  line.style.pointerEvents = "none";
+  svg.appendChild(line);
+}
+
+/** Remove temporary connector preview. */
+function removeConnectorPreview(): void {
+  const preview = container.querySelector("[data-connector-preview]");
+  if (preview) preview.remove();
+}
+
+/** Render port indicators for diagram nodes. Called when connector tool is active or node is selected. */
+function renderPortIndicators(): void {
+  removePortIndicators();
+  if (currentTool !== "connector" && !selectedNodeId) return;
+
+  const svg = container.querySelector("svg");
+  if (!svg) return;
+
+  const elements = svg.querySelectorAll("[data-node-id]");
+  for (const el of elements) {
+    const nodeId = el.getAttribute("data-node-id");
+    if (!nodeId) continue;
+
+    let ports: Port[];
+    try {
+      ports = getPorts(nodeId);
+    } catch {
+      continue;
+    }
+    if (ports.length === 0) continue;
+
+    const bbox = (el as SVGGraphicsElement).getBBox?.();
+    if (!bbox) continue;
+
+    for (const port of ports) {
+      const px = bbox.x + port.position[0] * bbox.width;
+      const py = bbox.y + port.position[1] * bbox.height;
+
+      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("cx", String(px));
+      circle.setAttribute("cy", String(py));
+      circle.setAttribute("r", "4");
+      circle.setAttribute("fill", "#f59e0b");
+      circle.setAttribute("stroke", "#0f172a");
+      circle.setAttribute("stroke-width", "1");
+      circle.setAttribute("data-port-indicator", "true");
+      circle.style.pointerEvents = "none";
+      svg.appendChild(circle);
+    }
+  }
+}
+
+/** Remove port indicator circles. */
+function removePortIndicators(): void {
+  const indicators = container.querySelectorAll("[data-port-indicator]");
+  indicators.forEach((el) => el.remove());
 }
 
 // ── Resize handles ──────────────────────────────────────────────────────────
@@ -693,6 +920,7 @@ function selectNode(id: string) {
   selectedNodeId = id;
   updateSelectionOverlay();
   createResizeHandles();
+  renderPortIndicators();
   showPropsFor(id);
   updateBindingForm();
   highlightLayerItem(id);
@@ -701,6 +929,7 @@ function selectNode(id: string) {
 function deselectNode() {
   removeSelectionOverlay();
   removeResizeHandles();
+  removePortIndicators();
   selectedNodeId = null;
   showEmptyProps();
   updateBindingForm();
@@ -948,7 +1177,7 @@ function setupDataPanel() {
     activeBindings.push({ nodeId: selectedNodeId, field, attr });
 
     const data = Array.isArray(loadedData) ? (loadedData as unknown[])[0] : loadedData;
-    evaluateBindings(JSON.stringify({ _static: data }));
+    evaluateBindings({ _static: data } as Record<string, unknown>);
     fullRerender();
     renderBindingsList();
     statusText.textContent = `Bound ${field} → ${attr}`;
@@ -964,6 +1193,50 @@ function setupDataPanel() {
     const ids = repeatTemplate(selectedNodeId, loadedData as Record<string, unknown>[], cols, gap, gap);
     fullRerender();
     statusText.textContent = `Repeated template: ${ids.length} instances`;
+  });
+
+  // Generate Diagram from graph JSON
+  document.getElementById("btn-generate-diagram")?.addEventListener("click", () => {
+    if (!loadedData) { statusText.textContent = "Load graph data first"; return; }
+    const data = loadedData as Record<string, unknown>;
+    if (!data.nodes || !data.edges) { statusText.textContent = "Data must have 'nodes' and 'edges' arrays"; return; }
+
+    const result = generateDiagram(
+      data as { nodes: Array<{ id: string; label: string; type?: string }>; edges: Array<{ from: string; to: string }> },
+      { direction: "TopToBottom", nodeGap: 40, layerGap: 80 },
+    );
+    fullRerender();
+    statusText.textContent = `Generated diagram: ${Object.keys(result.nodeMap).length} nodes, ${result.connectorCount} connectors`;
+  });
+
+  // Sample graph data
+  document.getElementById("btn-sample-graph")?.addEventListener("click", () => {
+    loadedData = {
+      nodes: [
+        { id: "client", label: "Browser Client", type: "client" },
+        { id: "api", label: "API Gateway", type: "service" },
+        { id: "auth", label: "Auth Service", type: "service" },
+        { id: "cache", label: "Redis Cache", type: "cache" },
+        { id: "db", label: "PostgreSQL", type: "database" },
+        { id: "queue", label: "Message Queue", type: "queue" },
+        { id: "worker", label: "Background Worker", type: "service" },
+      ],
+      edges: [
+        { from: "client", to: "api" },
+        { from: "api", to: "auth" },
+        { from: "api", to: "cache" },
+        { from: "api", to: "db" },
+        { from: "api", to: "queue" },
+        { from: "queue", to: "worker" },
+        { from: "worker", to: "db" },
+      ],
+    };
+    preview.textContent = JSON.stringify(loadedData, null, 2).slice(0, 600);
+    statusText.textContent = "Loaded sample graph (7 nodes, 7 edges)";
+    updateBindingForm();
+    // Show the generate button
+    const genBtn = document.getElementById("btn-generate-diagram");
+    if (genBtn) genBtn.style.display = "";
   });
 }
 

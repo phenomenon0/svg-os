@@ -23,6 +23,9 @@ export {
   applyTheme,
   instantiateTemplate, repeatTemplate, exportNodeSvg,
   cloneNode, groupNodes, ungroupNode, getNodeInfo,
+  addPorts, addDefaultPorts, getPorts,
+  addConnector, removeConnector, updateConnectors, getConnectors,
+  autoLayout, generateDiagram,
 } from "./api.js";
 
 export { applyOps, resetElementMap, getElement } from "./dom-apply.js";
@@ -30,4 +33,5 @@ export { applyOps, resetElementMap, getElement } from "./dom-apply.js";
 export type {
   NodeId, SvgTagName, AttrMap, SvgDomOp,
   Effect, Constraint, Binding, Theme,
+  Port, PortDirection, ConnectorDef, ConnectorRouting, ConnectorInfo,
 } from "./types.js";

@@ -42,6 +42,17 @@ export interface SvgOsWasm {
   svg_os_group_nodes(ids_json: string): string;
   svg_os_ungroup(group_id: string): void;
   svg_os_get_node_info(id: string): string;
+
+  // Diagram: Ports & Connectors
+  svg_os_add_ports(node_id: string, ports_json: string): void;
+  svg_os_add_default_ports(node_id: string): void;
+  svg_os_get_ports(node_id: string): string;
+  svg_os_add_connector(connector_json: string): string;
+  svg_os_remove_connector(path_node_id: string): void;
+  svg_os_update_connectors(): void;
+  svg_os_get_connectors(): string;
+  svg_os_auto_layout(config_json: string): void;
+  svg_os_generate_diagram(graph_json: string, config_json: string): string;
 }
 
 let wasmModule: SvgOsWasm | null = null;

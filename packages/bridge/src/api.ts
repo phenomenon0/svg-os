@@ -6,7 +6,7 @@
  */
 
 import { getWasm } from "./wasm-loader.js";
-import type { NodeId, SvgTagName, AttrMap, SvgDomOp, Effect, Constraint, Binding, Theme } from "./types.js";
+import type { NodeId, SvgTagName, AttrMap, SvgDomOp, Effect, Constraint, Binding, Theme, Port, ConnectorDef, ConnectorInfo } from "./types.js";
 
 // ── Document operations ─────────────────────────────────────────────────────
 
@@ -176,4 +176,58 @@ export function ungroupNode(groupId: NodeId): void {
 /** Get info about a node (tag, attrs, children) as a parsed object. */
 export function getNodeInfo(id: NodeId): { tag: string; attrs: Record<string, string>; children: string[]; visible: boolean; locked: boolean; name: string | null } {
   return JSON.parse(getWasm().svg_os_get_node_info(id));
+}
+
+// ── Diagram: Ports & Connectors ─────────────────────────────────────────────
+
+/** Set ports on a node. */
+export function addPorts(nodeId: NodeId, ports: Port[]): void {
+  getWasm().svg_os_add_ports(nodeId, JSON.stringify(ports));
+}
+
+/** Add default cardinal ports (top, right, bottom, left) to a node. */
+export function addDefaultPorts(nodeId: NodeId): void {
+  getWasm().svg_os_add_default_ports(nodeId);
+}
+
+/** Get ports for a node. */
+export function getPorts(nodeId: NodeId): Port[] {
+  return JSON.parse(getWasm().svg_os_get_ports(nodeId));
+}
+
+/** Add a connector between two ports. Returns the path node ID. */
+export function addConnector(def: ConnectorDef): NodeId {
+  return getWasm().svg_os_add_connector(JSON.stringify(def));
+}
+
+/** Remove a connector by its path node ID. */
+export function removeConnector(pathNodeId: NodeId): void {
+  getWasm().svg_os_remove_connector(pathNodeId);
+}
+
+/** Recompute all connector paths from current node positions. */
+export function updateConnectors(): void {
+  getWasm().svg_os_update_connectors();
+}
+
+/** Get all registered connectors. */
+export function getConnectors(): ConnectorInfo[] {
+  return JSON.parse(getWasm().svg_os_get_connectors());
+}
+
+/** Auto-layout all diagram nodes using Sugiyama layered algorithm. */
+export function autoLayout(config: {
+  direction?: "TopToBottom" | "LeftToRight";
+  nodeGap?: number;
+  layerGap?: number;
+}): void {
+  getWasm().svg_os_auto_layout(JSON.stringify(config));
+}
+
+/** Generate a diagram from graph JSON data. Creates nodes + connectors + layout. */
+export function generateDiagram(
+  data: { nodes: Array<{ id: string; label: string; type?: string }>; edges: Array<{ from: string; to: string; label?: string }> },
+  config?: { direction?: "TopToBottom" | "LeftToRight"; nodeGap?: number; layerGap?: number },
+): { nodeMap: Record<string, string>; connectorCount: number } {
+  return JSON.parse(getWasm().svg_os_generate_diagram(JSON.stringify(data), JSON.stringify(config ?? {})));
 }

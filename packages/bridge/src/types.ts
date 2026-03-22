@@ -55,3 +55,32 @@ export interface Theme {
   fonts: Record<string, string>;
   spacing: Record<string, number>;
 }
+
+/** Port direction for connector routing. */
+export type PortDirection = "Up" | "Down" | "Left" | "Right";
+
+/** A port (anchor point) on a diagram node. */
+export interface Port {
+  name: string;
+  position: [number, number];
+  direction: PortDirection;
+}
+
+/** Connector routing style. */
+export type ConnectorRouting = "Straight" | "Orthogonal";
+
+/** Connector definition for creating a connection between two ports. */
+export interface ConnectorDef {
+  from: [NodeId, string]; // [nodeId, portName]
+  to: [NodeId, string];
+  routing: ConnectorRouting;
+}
+
+/** Connector info returned from getConnectors. */
+export interface ConnectorInfo {
+  path_node: NodeId;
+  from: [NodeId, string];
+  to: [NodeId, string];
+  routing: ConnectorRouting;
+  label: NodeId | null;
+}

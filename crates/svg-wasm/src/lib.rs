@@ -9,8 +9,9 @@ use wasm_bindgen::prelude::*;
 use svg_doc::{Document, Node, NodeId, SvgTag, AttrKey, AttrValue};
 use svg_render::DiffEngine;
 use svg_effects::EffectStore;
-use svg_layout::ConstraintStore;
-use svg_runtime::{BindingEngine, Theme};
+use svg_layout::{ConstraintStore, ConnectorStore, Connector, ConnectorRouting,
+    DiagramGraph, LayeredLayoutConfig, LayoutDirection, layered_layout};
+use svg_runtime::{BindingEngine, Theme, generate_diagram};
 use forge_math::Rect;
 
 /// All runtime state for the SVG OS engine.
@@ -19,6 +20,7 @@ struct Engine {
     diff: DiffEngine,
     effects: EffectStore,
     constraints: ConstraintStore,
+    connectors: ConnectorStore,
     bindings: BindingEngine,
     undo_stack: Vec<svg_doc::SvgCommand>,
     redo_stack: Vec<svg_doc::SvgCommand>,
@@ -31,6 +33,7 @@ impl Engine {
             diff: DiffEngine::new(),
             effects: EffectStore::new(),
             constraints: ConstraintStore::new(),
+            connectors: ConnectorStore::new(),
             bindings: BindingEngine::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -382,12 +385,13 @@ pub fn svg_os_add_constraint(constraint_json: &str) -> std::result::Result<(), J
     })
 }
 
-/// Solve all constraints.
+/// Solve all constraints, then update connector paths.
 #[wasm_bindgen]
 pub fn svg_os_solve_constraints() {
     with_engine(|e| {
         let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
         e.constraints.solve(&mut e.doc, viewport);
+        e.connectors.update_paths(&mut e.doc);
     })
 }
 
@@ -474,6 +478,249 @@ pub fn svg_os_export_node_svg(node_id: &str) -> std::result::Result<String, JsVa
         // Create a temporary document containing just this subtree
         // For now, just serialize the whole doc (optimization: subtree-only later)
         Ok(svg_doc::doc_to_svg_string(&e.doc))
+    })
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Diagram API: Ports, connectors
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Set ports on a node from JSON: [{ name, position: [x, y], direction }]
+#[wasm_bindgen]
+pub fn svg_os_add_ports(node_id: &str, ports_json: &str) -> std::result::Result<(), JsValue> {
+    with_engine(|e| {
+        let id = NodeId::from_str(node_id)
+            .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
+        let ports: Vec<svg_doc::Port> = serde_json::from_str(ports_json)
+            .map_err(|err| JsValue::from_str(&format!("Invalid ports JSON: {}", err)))?;
+        if let Some(node) = e.doc.get_mut(id) {
+            node.ports = ports;
+        }
+        Ok(())
+    })
+}
+
+/// Add default cardinal ports (top, right, bottom, left) to a node.
+#[wasm_bindgen]
+pub fn svg_os_add_default_ports(node_id: &str) -> std::result::Result<(), JsValue> {
+    with_engine(|e| {
+        let id = NodeId::from_str(node_id)
+            .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
+        if let Some(node) = e.doc.get_mut(id) {
+            node.add_default_ports();
+        }
+        Ok(())
+    })
+}
+
+/// Get ports for a node as JSON.
+#[wasm_bindgen]
+pub fn svg_os_get_ports(node_id: &str) -> std::result::Result<String, JsValue> {
+    with_engine(|e| {
+        let id = NodeId::from_str(node_id)
+            .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
+        let empty: Vec<svg_doc::Port> = Vec::new();
+        let ports = e.doc.get(id)
+            .map(|n| &n.ports)
+            .unwrap_or(&empty);
+        Ok(serde_json::to_string(ports).unwrap_or_else(|_| "[]".to_string()))
+    })
+}
+
+/// Add a connector between two ports. Creates a <path> node and returns its ID.
+/// JSON: { from: [nodeId, portName], to: [nodeId, portName], routing: "Straight"|"Orthogonal" }
+#[wasm_bindgen]
+pub fn svg_os_add_connector(connector_json: &str) -> std::result::Result<String, JsValue> {
+    with_engine(|e| {
+        let val: serde_json::Value = serde_json::from_str(connector_json)
+            .map_err(|err| JsValue::from_str(&format!("Invalid JSON: {}", err)))?;
+
+        let from_arr = val.get("from").and_then(|v| v.as_array())
+            .ok_or_else(|| JsValue::from_str("Missing 'from' [nodeId, portName]"))?;
+        let to_arr = val.get("to").and_then(|v| v.as_array())
+            .ok_or_else(|| JsValue::from_str("Missing 'to' [nodeId, portName]"))?;
+
+        let from_node = NodeId::from_str(from_arr[0].as_str().unwrap_or(""))
+            .ok_or_else(|| JsValue::from_str("Invalid from node ID"))?;
+        let from_port = from_arr[1].as_str().unwrap_or("bottom").to_string();
+        let to_node = NodeId::from_str(to_arr[0].as_str().unwrap_or(""))
+            .ok_or_else(|| JsValue::from_str("Invalid to node ID"))?;
+        let to_port = to_arr[1].as_str().unwrap_or("top").to_string();
+
+        let routing = match val.get("routing").and_then(|v| v.as_str()) {
+            Some("Orthogonal") => ConnectorRouting::Orthogonal,
+            _ => ConnectorRouting::Straight,
+        };
+
+        // Create the <path> node
+        let mut path_node = Node::new(SvgTag::Path);
+        path_node.set_attr(AttrKey::Stroke, AttrValue::parse(&AttrKey::Stroke, "#64748b"));
+        path_node.set_attr(AttrKey::Fill, AttrValue::parse(&AttrKey::Fill, "none"));
+        path_node.set_attr(AttrKey::StrokeWidth, AttrValue::F32(2.0));
+        let path_id = path_node.id;
+
+        let root = e.doc.root;
+        let index = e.doc.children(root).len();
+        let cmd = svg_doc::SvgCommand::InsertNode {
+            node: path_node,
+            parent: root,
+            index,
+        };
+        let inverse = cmd.execute(&mut e.doc);
+        e.undo_stack.push(inverse);
+        e.redo_stack.clear();
+
+        // Register connector
+        e.connectors.add(Connector {
+            path_node: path_id,
+            from: (from_node, from_port),
+            to: (to_node, to_port),
+            routing,
+            label: None,
+        });
+
+        // Compute initial path
+        e.connectors.update_paths(&mut e.doc);
+
+        Ok(path_id.to_string())
+    })
+}
+
+/// Remove a connector by its path node ID.
+#[wasm_bindgen]
+pub fn svg_os_remove_connector(path_node_id: &str) -> std::result::Result<(), JsValue> {
+    with_engine(|e| {
+        let path_id = NodeId::from_str(path_node_id)
+            .ok_or_else(|| JsValue::from_str("Invalid path node ID"))?;
+
+        e.connectors.remove_by_path(path_id);
+
+        // Remove the path node from the document
+        let cmd = svg_doc::SvgCommand::RemoveNode {
+            id: path_id,
+            removed_nodes: vec![],
+            parent: None,
+            index: 0,
+        };
+        let inverse = cmd.execute(&mut e.doc);
+        e.undo_stack.push(inverse);
+        e.redo_stack.clear();
+
+        Ok(())
+    })
+}
+
+/// Recompute all connector paths from current node positions.
+#[wasm_bindgen]
+pub fn svg_os_update_connectors() {
+    with_engine(|e| {
+        e.connectors.update_paths(&mut e.doc);
+    })
+}
+
+/// Get all connectors as JSON.
+#[wasm_bindgen]
+pub fn svg_os_get_connectors() -> String {
+    with_engine(|e| {
+        serde_json::to_string(e.connectors.connectors())
+            .unwrap_or_else(|_| "[]".to_string())
+    })
+}
+
+/// Auto-layout all diagram nodes using Sugiyama layered algorithm.
+/// config_json: { direction: "TopToBottom"|"LeftToRight", nodeGap: number, layerGap: number }
+#[wasm_bindgen]
+pub fn svg_os_auto_layout(config_json: &str) -> std::result::Result<(), JsValue> {
+    with_engine(|e| {
+        let val: serde_json::Value = serde_json::from_str(config_json)
+            .map_err(|err| JsValue::from_str(&format!("Invalid JSON: {}", err)))?;
+
+        let direction = match val.get("direction").and_then(|v| v.as_str()) {
+            Some("LeftToRight") => LayoutDirection::LeftToRight,
+            _ => LayoutDirection::TopToBottom,
+        };
+        let node_gap = val.get("nodeGap").and_then(|v| v.as_f64()).unwrap_or(40.0) as f32;
+        let layer_gap = val.get("layerGap").and_then(|v| v.as_f64()).unwrap_or(80.0) as f32;
+
+        let config = LayeredLayoutConfig {
+            direction,
+            node_gap,
+            layer_gap,
+            margin: (40.0, 40.0),
+        };
+
+        // Collect diagram nodes (nodes that have ports)
+        let mut diagram_nodes = Vec::new();
+        let mut node_sizes = std::collections::HashMap::new();
+        for (id, node) in &e.doc.nodes {
+            if !node.ports.is_empty() {
+                diagram_nodes.push(*id);
+                let w = node.get_f32(&AttrKey::Width);
+                let h = node.get_f32(&AttrKey::Height);
+                let size = if w > 0.0 && h > 0.0 { (w, h) } else { (160.0, 80.0) };
+                node_sizes.insert(*id, size);
+            }
+        }
+
+        // Build edges from connector store
+        let edges: Vec<(NodeId, NodeId)> = e.connectors.connectors()
+            .iter()
+            .map(|c| (c.from.0, c.to.0))
+            .collect();
+
+        let graph = DiagramGraph { nodes: diagram_nodes, edges, node_sizes };
+        let result = layered_layout(&graph, &config);
+
+        // Apply positions
+        for (node_id, (x, y)) in &result.positions {
+            e.doc.set_attr(*node_id, AttrKey::X, AttrValue::F32(*x));
+            e.doc.set_attr(*node_id, AttrKey::Y, AttrValue::F32(*y));
+        }
+
+        // Update connectors
+        e.connectors.update_paths(&mut e.doc);
+
+        Ok(())
+    })
+}
+
+/// Generate a diagram from JSON graph data. Creates nodes, connectors, runs layout.
+/// Returns JSON: { "node_map": { "data-id": "node-uuid", ... }, "connector_count": N }
+#[wasm_bindgen]
+pub fn svg_os_generate_diagram(graph_json: &str, config_json: &str) -> std::result::Result<String, JsValue> {
+    with_engine(|e| {
+        let graph: serde_json::Value = serde_json::from_str(graph_json)
+            .map_err(|err| JsValue::from_str(&format!("Invalid graph JSON: {}", err)))?;
+
+        let val: serde_json::Value = serde_json::from_str(config_json).unwrap_or(serde_json::json!({}));
+        let direction = match val.get("direction").and_then(|v| v.as_str()) {
+            Some("LeftToRight") => LayoutDirection::LeftToRight,
+            _ => LayoutDirection::TopToBottom,
+        };
+        let node_gap = val.get("nodeGap").and_then(|v| v.as_f64()).unwrap_or(40.0) as f32;
+        let layer_gap = val.get("layerGap").and_then(|v| v.as_f64()).unwrap_or(80.0) as f32;
+
+        let config = LayeredLayoutConfig {
+            direction,
+            node_gap,
+            layer_gap,
+            margin: (40.0, 40.0),
+        };
+
+        let result = generate_diagram(&mut e.doc, &mut e.connectors, &graph, &config)
+            .map_err(|err| JsValue::from_str(&err))?;
+
+        let node_map_json: serde_json::Map<String, serde_json::Value> = result.node_map
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.to_string())))
+            .collect();
+
+        let output = serde_json::json!({
+            "nodeMap": node_map_json,
+            "connectorCount": result.connector_count,
+        });
+
+        Ok(output.to_string())
     })
 }
 

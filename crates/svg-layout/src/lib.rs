@@ -7,6 +7,12 @@
 //! 3. Solve in order, writing computed positions back to Document
 //! 4. Mark solved nodes as dirty for re-render
 
+mod connector;
+pub use connector::*;
+
+pub mod graph_layout;
+pub use graph_layout::*;
+
 use forge_math::Rect;
 use svg_doc::{Document, NodeId, AttrKey, AttrValue};
 use serde::{Serialize, Deserialize};
