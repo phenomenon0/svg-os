@@ -185,6 +185,92 @@ function applyViewTransform() {
   svg.style.transform = "";
   svg.style.width = "100%";
   svg.style.height = "100%";
+
+  // Ensure infinite canvas grid pattern exists
+  ensureCanvasGrid(svg, vbX, vbY, vbW, vbH);
+}
+
+function ensureCanvasGrid(svg: SVGSVGElement, vbX: number, vbY: number, vbW: number, vbH: number) {
+  // Add/update a background rect + grid that covers the viewBox
+  let bg = svg.querySelector("[data-canvas-bg]") as SVGRectElement | null;
+  let grid = svg.querySelector("[data-canvas-grid]") as SVGRectElement | null;
+
+  if (!bg) {
+    // Create grid pattern in defs
+    let defs = svg.querySelector("defs");
+    if (!defs) {
+      defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+      svg.prepend(defs);
+    }
+
+    // Grid pattern: dots at 20px intervals + faint lines at 100px
+    let gridPattern = defs.querySelector("#canvas-grid-pattern") as SVGPatternElement | null;
+    if (!gridPattern) {
+      gridPattern = document.createElementNS("http://www.w3.org/2000/svg", "pattern") as SVGPatternElement;
+      gridPattern.id = "canvas-grid-pattern";
+      gridPattern.setAttribute("width", "100");
+      gridPattern.setAttribute("height", "100");
+      gridPattern.setAttribute("patternUnits", "userSpaceOnUse");
+
+      // Major grid lines every 100px
+      const hLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      hLine.setAttribute("x1", "0"); hLine.setAttribute("y1", "0");
+      hLine.setAttribute("x2", "100"); hLine.setAttribute("y2", "0");
+      hLine.setAttribute("stroke", "#1e293b"); hLine.setAttribute("stroke-width", "0.5");
+      gridPattern.appendChild(hLine);
+
+      const vLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      vLine.setAttribute("x1", "0"); vLine.setAttribute("y1", "0");
+      vLine.setAttribute("x2", "0"); vLine.setAttribute("y2", "100");
+      vLine.setAttribute("stroke", "#1e293b"); vLine.setAttribute("stroke-width", "0.5");
+      gridPattern.appendChild(vLine);
+
+      // Dots at 20px intervals
+      for (let gx = 0; gx < 100; gx += 20) {
+        for (let gy = 0; gy < 100; gy += 20) {
+          const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          dot.setAttribute("cx", `${gx}`);
+          dot.setAttribute("cy", `${gy}`);
+          dot.setAttribute("r", "0.8");
+          dot.setAttribute("fill", "#283548");
+          gridPattern.appendChild(dot);
+        }
+      }
+
+      defs.appendChild(gridPattern);
+    }
+
+    // Background rect
+    bg = document.createElementNS("http://www.w3.org/2000/svg", "rect") as SVGRectElement;
+    bg.setAttribute("data-canvas-bg", "true");
+    bg.setAttribute("fill", "#0c1220");
+    // Insert before all other content (after defs)
+    const firstContent = svg.querySelector(":scope > :not(defs)");
+    if (firstContent) {
+      svg.insertBefore(bg, firstContent);
+    } else {
+      svg.appendChild(bg);
+    }
+
+    // Grid rect
+    grid = document.createElementNS("http://www.w3.org/2000/svg", "rect") as SVGRectElement;
+    grid.setAttribute("data-canvas-grid", "true");
+    grid.setAttribute("fill", "url(#canvas-grid-pattern)");
+    svg.insertBefore(grid, bg.nextSibling);
+  }
+
+  // Update bg and grid to cover current viewBox with margin
+  const margin = 200;
+  const attrs = {
+    x: `${vbX - margin}`,
+    y: `${vbY - margin}`,
+    width: `${vbW + margin * 2}`,
+    height: `${vbH + margin * 2}`,
+  };
+  for (const [k, v] of Object.entries(attrs)) {
+    bg!.setAttribute(k, v);
+    grid!.setAttribute(k, v);
+  }
 }
 
 function updateStatus() {
