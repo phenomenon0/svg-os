@@ -41,6 +41,13 @@ export type Constraint =
   | { RepeatGrid: { template: NodeId; count: number; columns: number; gap: [number, number] } }
   | { AutoResize: { node: NodeId; axis: string; min: number; max: number; padding: number } };
 
+/** Data flow through a connector. */
+export type DataFlow =
+  | "None"
+  | "PassThrough"
+  | { Field: string }
+  | { Expression: string };
+
 /** Data binding definition. */
 export interface Binding {
   source: { Static: { value: unknown } } | { Json: { url: string; refresh_secs?: number } } | { Csv: { url: string } };

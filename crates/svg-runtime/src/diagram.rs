@@ -177,6 +177,7 @@ pub fn generate_diagram(
             to: (to_node, to_port.into()),
             routing: ConnectorRouting::Orthogonal,
             label: None,
+            data_flow: svg_layout::DataFlow::None,
         });
 
         connector_count += 1;

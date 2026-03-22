@@ -15,6 +15,23 @@ pub enum ConnectorRouting {
     Orthogonal,
 }
 
+/// How data flows through a connector.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DataFlow {
+    /// No data flows (visual-only, backward compat default).
+    None,
+    /// Pass the source node's entire bound data to the target.
+    PassThrough,
+    /// Pass a subset of the source node's data (dot-separated field path).
+    Field(String),
+    /// Evaluate an expression against source data, pass result.
+    Expression(String),
+}
+
+impl Default for DataFlow {
+    fn default() -> Self { Self::None }
+}
+
 /// A connector between two ports on two nodes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Connector {
@@ -28,6 +45,9 @@ pub struct Connector {
     pub routing: ConnectorRouting,
     /// Optional label text node.
     pub label: Option<NodeId>,
+    /// How data flows from source to target.
+    #[serde(default)]
+    pub data_flow: DataFlow,
 }
 
 /// Manages all connectors and updates their paths.
@@ -76,6 +96,70 @@ impl ConnectorStore {
 
     pub fn is_empty(&self) -> bool {
         self.connectors.is_empty()
+    }
+
+    /// Find all connectors flowing INTO a node.
+    pub fn incoming(&self, node_id: NodeId) -> Vec<&Connector> {
+        self.connectors.iter().filter(|c| c.to.0 == node_id).collect()
+    }
+
+    /// Find all connectors flowing FROM a node.
+    pub fn outgoing(&self, node_id: NodeId) -> Vec<&Connector> {
+        self.connectors.iter().filter(|c| c.from.0 == node_id).collect()
+    }
+
+    /// Topological order of nodes based on connector graph (Kahn's algorithm).
+    /// Upstream nodes (no incoming data-flow connectors) come first.
+    /// Nodes not in the graph are appended at the end.
+    pub fn topological_order(&self, all_nodes: &[NodeId]) -> Vec<NodeId> {
+        use std::collections::{HashMap, VecDeque};
+
+        // Build adjacency and in-degree from data-flow connectors only
+        let mut in_degree: HashMap<NodeId, usize> = HashMap::new();
+        let mut adj: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+
+        for nid in all_nodes {
+            in_degree.entry(*nid).or_insert(0);
+            adj.entry(*nid).or_default();
+        }
+
+        for conn in &self.connectors {
+            if matches!(conn.data_flow, DataFlow::None) {
+                continue;
+            }
+            *in_degree.entry(conn.to.0).or_insert(0) += 1;
+            adj.entry(conn.from.0).or_default().push(conn.to.0);
+        }
+
+        // Kahn's algorithm
+        let mut queue: VecDeque<NodeId> = in_degree.iter()
+            .filter(|(_, deg)| **deg == 0)
+            .map(|(id, _)| *id)
+            .collect();
+
+        let mut result = Vec::with_capacity(all_nodes.len());
+        while let Some(node) = queue.pop_front() {
+            result.push(node);
+            if let Some(neighbors) = adj.get(&node) {
+                for next in neighbors {
+                    if let Some(deg) = in_degree.get_mut(next) {
+                        *deg = deg.saturating_sub(1);
+                        if *deg == 0 {
+                            queue.push_back(*next);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Append any nodes not reached (cycles or disconnected)
+        for nid in all_nodes {
+            if !result.contains(nid) {
+                result.push(*nid);
+            }
+        }
+
+        result
     }
 
     /// Recompute all connector paths based on current node positions/ports.
@@ -288,6 +372,7 @@ mod tests {
             to: (b_id, "top".into()),
             routing: ConnectorRouting::Straight,
             label: None,
+            data_flow: DataFlow::None,
         });
 
         store.update_paths(&mut doc);
@@ -316,6 +401,7 @@ mod tests {
             to: (b, "top".into()),
             routing: ConnectorRouting::Straight,
             label: None,
+            data_flow: DataFlow::None,
         });
         store.add(Connector {
             path_node: p2,
@@ -323,6 +409,7 @@ mod tests {
             to: (c, "top".into()),
             routing: ConnectorRouting::Straight,
             label: None,
+            data_flow: DataFlow::None,
         });
 
         assert_eq!(store.len(), 2);

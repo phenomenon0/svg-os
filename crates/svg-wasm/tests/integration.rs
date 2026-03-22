@@ -5,7 +5,7 @@
 
 use svg_doc::*;
 use svg_render::DiffEngine;
-use svg_layout::{ConstraintStore, Constraint, Anchor};
+use svg_layout::{ConstraintStore, Constraint, Anchor, ConnectorStore, Connector, ConnectorRouting, DataFlow};
 use svg_runtime::{BindingEngine, Binding, DataSource, FieldMapping, Theme};
 use forge_math::Rect;
 
@@ -453,4 +453,270 @@ fn clone_subtree_preserves_attrs() {
     let child = doc.get(clone.children[0]).unwrap();
     assert_eq!(child.get_f32(&AttrKey::X), 10.0);
     assert_eq!(child.get_f32(&AttrKey::Width), 100.0);
+}
+
+// ── Data flow through connectors ─────────────────────────────────────────
+
+#[test]
+fn data_flow_chain_a_to_b_to_c() {
+    let mut doc = Document::new();
+    let root = doc.root;
+
+    // Create three nodes: A → B → C
+    let mut node_a = Node::new(SvgTag::G);
+    node_a.add_default_ports();
+    let a_id = node_a.id;
+    doc.insert_node(root, 1, node_a);
+
+    let mut text_a = Node::new(SvgTag::Text);
+    let text_a_id = text_a.id;
+    doc.insert_node(a_id, 0, text_a);
+
+    let mut node_b = Node::new(SvgTag::G);
+    node_b.add_default_ports();
+    let b_id = node_b.id;
+    doc.insert_node(root, 2, node_b);
+
+    let mut text_b = Node::new(SvgTag::Text);
+    let text_b_id = text_b.id;
+    doc.insert_node(b_id, 0, text_b);
+
+    let mut node_c = Node::new(SvgTag::G);
+    node_c.add_default_ports();
+    let c_id = node_c.id;
+    doc.insert_node(root, 3, node_c);
+
+    let mut text_c = Node::new(SvgTag::Text);
+    let text_c_id = text_c.id;
+    doc.insert_node(c_id, 0, text_c);
+
+    // Create connectors with data flow: A→B→C
+    let mut connectors = ConnectorStore::new();
+    let path1 = Node::new(SvgTag::Path);
+    let path1_id = path1.id;
+    doc.insert_node(root, 4, path1);
+    connectors.add(Connector {
+        path_node: path1_id,
+        from: (a_id, "bottom".into()),
+        to: (b_id, "top".into()),
+        routing: ConnectorRouting::Straight,
+        label: None,
+        data_flow: DataFlow::PassThrough,
+    });
+
+    let path2 = Node::new(SvgTag::Path);
+    let path2_id = path2.id;
+    doc.insert_node(root, 5, path2);
+    connectors.add(Connector {
+        path_node: path2_id,
+        from: (b_id, "bottom".into()),
+        to: (c_id, "top".into()),
+        routing: ConnectorRouting::Straight,
+        label: None,
+        data_flow: DataFlow::PassThrough,
+    });
+
+    // Bind data: A has static data, B and C use expressions referencing upstream
+    let mut engine = BindingEngine::new();
+    engine.bind(Binding {
+        source: DataSource::Static {
+            value: serde_json::json!({"score": 95, "name": "Alice"}),
+        },
+        target: a_id,
+        mappings: vec![FieldMapping {
+            field: "name".into(),
+            attr: "data-text-content".into(),
+            transform: None,
+            expr: None,
+        }],
+        fallback: None,
+    });
+
+    engine.bind(Binding {
+        source: DataSource::Static { value: serde_json::json!({}) },
+        target: b_id,
+        mappings: vec![FieldMapping {
+            field: String::new(),
+            attr: "data-text-content".into(),
+            transform: None,
+            expr: Some("format('Score: {}', $._input.top.score)".into()),
+        }],
+        fallback: None,
+    });
+
+    engine.bind(Binding {
+        source: DataSource::Static { value: serde_json::json!({}) },
+        target: c_id,
+        mappings: vec![FieldMapping {
+            field: String::new(),
+            attr: "data-text-content".into(),
+            transform: None,
+            expr: Some("if($._input.top._input.top.score > 90, 'HOT', 'COLD')".into()),
+        }],
+        fallback: None,
+    });
+
+    // Evaluate with data flow
+    engine.evaluate_with_flow(&mut doc, &serde_json::json!({}), &connectors);
+
+    // Node A should show "Alice"
+    assert_eq!(
+        doc.get(a_id).unwrap().get_string(&AttrKey::TextContent),
+        Some("Alice")
+    );
+
+    // Node B should show "Score: 95"
+    assert_eq!(
+        doc.get(b_id).unwrap().get_string(&AttrKey::TextContent),
+        Some("Score: 95")
+    );
+
+    // Node C should show "HOT" (score 95 > 90)
+    assert_eq!(
+        doc.get(c_id).unwrap().get_string(&AttrKey::TextContent),
+        Some("HOT")
+    );
+
+    // Verify node_data is populated
+    assert!(engine.get_node_data(a_id).is_some());
+    assert!(engine.get_node_data(b_id).is_some());
+    assert!(engine.get_node_data(c_id).is_some());
+}
+
+#[test]
+fn data_flow_fan_in() {
+    let mut doc = Document::new();
+    let root = doc.root;
+
+    // Two source nodes feed into one target
+    let mut src1 = Node::new(SvgTag::G);
+    src1.add_default_ports();
+    let src1_id = src1.id;
+    doc.insert_node(root, 1, src1);
+
+    let mut src2 = Node::new(SvgTag::G);
+    src2.add_default_ports();
+    let src2_id = src2.id;
+    doc.insert_node(root, 2, src2);
+
+    let mut target = Node::new(SvgTag::G);
+    target.add_default_ports();
+    let target_id = target.id;
+    doc.insert_node(root, 3, target);
+
+    let mut connectors = ConnectorStore::new();
+    let p1 = Node::new(SvgTag::Path);
+    let p1_id = p1.id;
+    doc.insert_node(root, 4, p1);
+    connectors.add(Connector {
+        path_node: p1_id,
+        from: (src1_id, "right".into()),
+        to: (target_id, "left".into()),
+        routing: ConnectorRouting::Straight,
+        label: None,
+        data_flow: DataFlow::PassThrough,
+    });
+
+    let p2 = Node::new(SvgTag::Path);
+    let p2_id = p2.id;
+    doc.insert_node(root, 5, p2);
+    connectors.add(Connector {
+        path_node: p2_id,
+        from: (src2_id, "right".into()),
+        to: (target_id, "top".into()),
+        routing: ConnectorRouting::Straight,
+        label: None,
+        data_flow: DataFlow::PassThrough,
+    });
+
+    let mut engine = BindingEngine::new();
+    engine.bind(Binding {
+        source: DataSource::Static { value: serde_json::json!({"status": "running"}) },
+        target: src1_id,
+        mappings: vec![],
+        fallback: None,
+    });
+    engine.bind(Binding {
+        source: DataSource::Static { value: serde_json::json!({"status": "idle"}) },
+        target: src2_id,
+        mappings: vec![],
+        fallback: None,
+    });
+    engine.bind(Binding {
+        source: DataSource::Static { value: serde_json::json!({}) },
+        target: target_id,
+        mappings: vec![FieldMapping {
+            field: String::new(),
+            attr: "data-text-content".into(),
+            transform: None,
+            expr: Some("format('{} + {}', $._input.left.status, $._input.top.status)".into()),
+        }],
+        fallback: None,
+    });
+
+    engine.evaluate_with_flow(&mut doc, &serde_json::json!({}), &connectors);
+
+    // Target should see both inputs by port name
+    assert_eq!(
+        doc.get(target_id).unwrap().get_string(&AttrKey::TextContent),
+        Some("running + idle")
+    );
+}
+
+#[test]
+fn data_flow_none_is_visual_only() {
+    let mut doc = Document::new();
+    let root = doc.root;
+
+    let mut src = Node::new(SvgTag::G);
+    src.add_default_ports();
+    let src_id = src.id;
+    doc.insert_node(root, 1, src);
+
+    let mut tgt = Node::new(SvgTag::G);
+    tgt.add_default_ports();
+    let tgt_id = tgt.id;
+    doc.insert_node(root, 2, tgt);
+
+    let mut connectors = ConnectorStore::new();
+    let p = Node::new(SvgTag::Path);
+    let p_id = p.id;
+    doc.insert_node(root, 3, p);
+    connectors.add(Connector {
+        path_node: p_id,
+        from: (src_id, "bottom".into()),
+        to: (tgt_id, "top".into()),
+        routing: ConnectorRouting::Straight,
+        label: None,
+        data_flow: DataFlow::None, // visual only
+    });
+
+    let mut engine = BindingEngine::new();
+    engine.bind(Binding {
+        source: DataSource::Static { value: serde_json::json!({"val": 42}) },
+        target: src_id,
+        mappings: vec![],
+        fallback: None,
+    });
+    engine.bind(Binding {
+        source: DataSource::Static { value: serde_json::json!({"own": "data"}) },
+        target: tgt_id,
+        mappings: vec![FieldMapping {
+            field: "own".into(),
+            attr: "data-text-content".into(),
+            transform: None,
+            expr: None,
+        }],
+        fallback: None,
+    });
+
+    engine.evaluate_with_flow(&mut doc, &serde_json::json!({}), &connectors);
+
+    // Target should NOT have _input (DataFlow::None)
+    let node_data = engine.get_node_data(tgt_id).unwrap();
+    assert!(node_data.get("_input").is_none(), "DataFlow::None should not inject _input");
+    assert_eq!(
+        doc.get(tgt_id).unwrap().get_string(&AttrKey::TextContent),
+        Some("data")
+    );
 }

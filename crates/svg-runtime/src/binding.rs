@@ -71,6 +71,8 @@ pub struct BindingEngine {
     /// Cache of compiled expressions keyed by source string.
     #[allow(dead_code)]
     expr_cache: HashMap<String, CompiledExpr>,
+    /// Computed data per node (populated by evaluate_with_flow).
+    node_data: HashMap<NodeId, Value>,
 }
 
 // Custom Serialize/Deserialize that skips expr_cache
@@ -83,7 +85,7 @@ impl Serialize for BindingEngine {
 impl<'de> Deserialize<'de> for BindingEngine {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let bindings = Vec::<Binding>::deserialize(deserializer)?;
-        Ok(Self { bindings, expr_cache: HashMap::new() })
+        Ok(Self { bindings, expr_cache: HashMap::new(), node_data: HashMap::new() })
     }
 }
 
@@ -92,6 +94,7 @@ impl BindingEngine {
         Self {
             bindings: Vec::new(),
             expr_cache: HashMap::new(),
+            node_data: HashMap::new(),
         }
     }
 
@@ -260,6 +263,185 @@ impl BindingEngine {
                     base
                 }
             }
+        }
+    }
+
+    // ── Data flow methods ────────────────────────────────────────────
+
+    /// Get computed data for a node (populated by evaluate_with_flow).
+    pub fn get_node_data(&self, node: NodeId) -> Option<&Value> {
+        self.node_data.get(&node)
+    }
+
+    /// Clear all computed node data.
+    pub fn clear_node_data(&mut self) {
+        self.node_data.clear();
+    }
+
+    /// Evaluate bindings with data flowing through connectors.
+    ///
+    /// 1. Topologically sorts nodes by connector graph
+    /// 2. For each node, gathers upstream data via incoming connectors
+    /// 3. Merges upstream data with the node's own data source
+    /// 4. Evaluates bindings with the merged context
+    /// 5. Stores the result for downstream nodes
+    pub fn evaluate_with_flow(
+        &mut self,
+        doc: &mut Document,
+        external_data: &Value,
+        connectors: &svg_layout::ConnectorStore,
+    ) {
+        self.node_data.clear();
+
+        // Collect all bound node IDs
+        let bound_nodes: Vec<NodeId> = self.bindings.iter().map(|b| b.target).collect();
+
+        // Topological sort
+        let order = connectors.topological_order(&bound_nodes);
+
+        // Clone bindings to avoid borrow issues
+        let bindings = self.bindings.clone();
+
+        for node_id in &order {
+            // Find binding for this node
+            let binding = match bindings.iter().find(|b| b.target == *node_id) {
+                Some(b) => b,
+                None => continue,
+            };
+
+            // Gather upstream data from incoming connectors
+            let incoming = connectors.incoming(*node_id);
+            let mut input_data = serde_json::Map::new();
+            for conn in &incoming {
+                if matches!(conn.data_flow, svg_layout::DataFlow::None) {
+                    continue;
+                }
+                let source_data = self.node_data.get(&conn.from.0)
+                    .cloned()
+                    .unwrap_or(Value::Null);
+
+                let flow_data = match &conn.data_flow {
+                    svg_layout::DataFlow::PassThrough => source_data,
+                    svg_layout::DataFlow::Field(path) => {
+                        resolve_field(&source_data, path).unwrap_or(Value::Null)
+                    }
+                    svg_layout::DataFlow::Expression(expr) => {
+                        if let Some(compiled) = self.get_or_compile(expr) {
+                            let ctx = EvalContext {
+                                data: &source_data,
+                                value: None,
+                                row_index: None,
+                                row_count: None,
+                            };
+                            compiled.eval(&ctx)
+                                .map(|v| json_from_expr_value(&v))
+                                .unwrap_or(Value::Null)
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    svg_layout::DataFlow::None => continue,
+                };
+
+                input_data.insert(conn.to.1.clone(), flow_data);
+            }
+
+            // Resolve own data source
+            let own_data = match &binding.source {
+                DataSource::Static { value } => value.clone(),
+                DataSource::Json { url, .. } => {
+                    external_data.get(url).cloned().unwrap_or(Value::Null)
+                }
+                DataSource::Csv { url } => {
+                    external_data.get(url).cloned().unwrap_or(Value::Null)
+                }
+                DataSource::Expression { expr } => {
+                    if let Some(compiled) = self.get_or_compile(expr) {
+                        let ctx = EvalContext {
+                            data: external_data,
+                            value: None,
+                            row_index: None,
+                            row_count: None,
+                        };
+                        compiled.eval(&ctx)
+                            .map(|v| json_from_expr_value(&v))
+                            .unwrap_or(Value::Null)
+                    } else {
+                        resolve_field(external_data, expr).unwrap_or(Value::Null)
+                    }
+                }
+            };
+
+            let effective_data = if own_data.is_null() {
+                binding.fallback.clone().unwrap_or(Value::Null)
+            } else {
+                own_data.clone()
+            };
+
+            // Build merged context: own data + _input from upstream
+            let merged = if input_data.is_empty() {
+                effective_data.clone()
+            } else {
+                let mut obj = match effective_data.clone() {
+                    Value::Object(m) => m,
+                    _ => serde_json::Map::new(),
+                };
+                obj.insert("_input".into(), Value::Object(input_data));
+                Value::Object(obj)
+            };
+
+            // Evaluate bindings against merged context
+            if !merged.is_null() {
+                for mapping in &binding.mappings {
+                    let attr_str = if let Some(expr_str) = &mapping.expr {
+                        if let Some(compiled) = self.get_or_compile(expr_str) {
+                            let ctx = EvalContext {
+                                data: &merged,
+                                value: None,
+                                row_index: None,
+                                row_count: None,
+                            };
+                            match compiled.eval_to_string(&ctx) {
+                                Ok(s) => s,
+                                Err(_) => continue,
+                            }
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        let field_value = resolve_field(&merged, &mapping.field);
+                        match field_value {
+                            Some(value) => {
+                                let base = value_to_string(&value);
+                                match &mapping.transform {
+                                    None => base,
+                                    Some(expr_str) => {
+                                        if let Some(compiled) = self.get_or_compile(expr_str) {
+                                            let ctx = EvalContext {
+                                                data: &merged,
+                                                value: Some(&value),
+                                                row_index: None,
+                                                row_count: None,
+                                            };
+                                            compiled.eval_to_string(&ctx).unwrap_or(base)
+                                        } else {
+                                            base
+                                        }
+                                    }
+                                }
+                            }
+                            None => continue,
+                        }
+                    };
+
+                    let attr_key = AttrKey::from_name(&mapping.attr);
+                    let attr_value = AttrValue::parse(&attr_key, &attr_str);
+                    doc.set_attr(*node_id, attr_key, attr_value);
+                }
+            }
+
+            // Store merged data for downstream nodes
+            self.node_data.insert(*node_id, merged);
         }
     }
 }

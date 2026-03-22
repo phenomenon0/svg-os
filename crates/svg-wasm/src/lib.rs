@@ -435,6 +435,35 @@ pub fn svg_os_evaluate_bindings(data_json: &str) -> std::result::Result<(), JsVa
     })
 }
 
+/// Evaluate bindings with data flowing through connectors.
+/// Data flows from upstream nodes to downstream nodes via connectors
+/// with dataFlow set to PassThrough, Field, or Expression.
+/// Downstream nodes can access upstream data via $._input.portName.
+#[wasm_bindgen]
+pub fn svg_os_evaluate_data_flow(data_json: &str) -> std::result::Result<(), JsValue> {
+    try_with_engine(|e| {
+        let data: serde_json::Value = serde_json::from_str(data_json)
+            .map_err(|err| JsValue::from_str(&format!("Invalid data JSON: {}", err)))?;
+        e.bindings.evaluate_with_flow(&mut e.doc, &data, &e.connectors);
+        Ok(())
+    })
+}
+
+/// Get the computed data for a node after data flow evaluation.
+/// Returns JSON string of the node's merged data (own + upstream inputs).
+#[wasm_bindgen]
+pub fn svg_os_get_node_data(node_id: &str) -> std::result::Result<String, JsValue> {
+    try_with_engine(|e| {
+        let nid = NodeId::from_str(node_id)
+            .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
+        match e.bindings.get_node_data(nid) {
+            Some(data) => serde_json::to_string(data)
+                .map_err(|err| JsValue::from_str(&format!("JSON error: {}", err))),
+            None => Ok("null".to_string()),
+        }
+    })
+}
+
 /// Apply a theme to the document.
 #[wasm_bindgen]
 pub fn svg_os_apply_theme(theme_json: &str) -> std::result::Result<(), JsValue> {
@@ -588,6 +617,28 @@ pub fn svg_os_add_connector(connector_json: &str) -> std::result::Result<String,
         e.undo_stack.push(inverse);
         e.redo_stack.clear();
 
+        // Parse optional data flow
+        let data_flow = match val.get("dataFlow").and_then(|v| v.as_str()) {
+            Some("PassThrough") => svg_layout::DataFlow::PassThrough,
+            _ => svg_layout::DataFlow::None,
+        };
+        // Also handle object form: {"Field": "path"} or {"Expression": "expr"}
+        let data_flow = if matches!(data_flow, svg_layout::DataFlow::None) {
+            if let Some(obj) = val.get("dataFlow") {
+                if let Some(field) = obj.get("Field").and_then(|v| v.as_str()) {
+                    svg_layout::DataFlow::Field(field.to_string())
+                } else if let Some(expr) = obj.get("Expression").and_then(|v| v.as_str()) {
+                    svg_layout::DataFlow::Expression(expr.to_string())
+                } else {
+                    data_flow
+                }
+            } else {
+                data_flow
+            }
+        } else {
+            data_flow
+        };
+
         // Register connector
         e.connectors.add(Connector {
             path_node: path_id,
@@ -595,6 +646,7 @@ pub fn svg_os_add_connector(connector_json: &str) -> std::result::Result<String,
             to: (to_node, to_port),
             routing,
             label: None,
+            data_flow,
         });
 
         // Compute initial path
