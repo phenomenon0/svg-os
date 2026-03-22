@@ -16,6 +16,15 @@ interface NodeTypeInfo {
   default_height: number;
 }
 
+const HTML_NODE_TYPES = [
+  { id: "html-dashboard", name: "Dashboard", variant: "dashboard", w: 300, h: 220, title: "System Monitor", content: "CPU: 42%,Memory: 68%,Disk: 23%,Network: 1.2GB/s" },
+  { id: "html-table", name: "Data Table", variant: "table", w: 300, h: 200, title: "Data Table", content: "Name,Status,Score\nAlice,Active,95\nBob,Idle,82\nCarol,Active,91" },
+  { id: "html-terminal", name: "Terminal", variant: "terminal", w: 320, h: 200, title: "Terminal", content: "" },
+  { id: "html-metric", name: "Metric", variant: "metric", w: 180, h: 120, title: "Total Users", content: "1,247" },
+  { id: "html-markdown", name: "Markdown", variant: "markdown", w: 280, h: 220, title: "Notes", content: "" },
+  { id: "html-card", name: "HTML Card", variant: "card", w: 240, h: 160, title: "Custom Node", content: "" },
+];
+
 export function NodePalette() {
   const editor = useEditor();
   const [types, setTypes] = useState<NodeTypeInfo[]>([]);
@@ -36,6 +45,26 @@ export function NodePalette() {
   }, []);
 
   const handlePlace = useCallback((typeId: string) => {
+    // Check if it's an HTML node type
+    const htmlType = HTML_NODE_TYPES.find(h => h.id === typeId);
+    if (htmlType) {
+      const center = editor.getViewportScreenCenter();
+      editor.createShape({
+        type: "html",
+        x: center.x - htmlType.w / 2,
+        y: center.y - htmlType.h / 2,
+        props: {
+          w: htmlType.w,
+          h: htmlType.h,
+          variant: htmlType.variant,
+          title: htmlType.title,
+          content: htmlType.content,
+        },
+      });
+      return;
+    }
+
+    // SVG template shape
     try {
       const nt = getNodeType(typeId) as { template_svg: string; default_width: number; default_height: number };
       const maxSize = 200;
@@ -60,9 +89,16 @@ export function NodePalette() {
     }
   }, [editor]);
 
+  // HTML node types (not from WASM — defined inline)
+  const htmlTypes: NodeTypeInfo[] = HTML_NODE_TYPES.map(h => ({
+    id: h.id, name: h.name, category: "html",
+    slots: [], default_width: h.w, default_height: h.h,
+  }));
+
   // Group by category
+  const allTypes = [...types, ...htmlTypes];
   const categories = new Map<string, NodeTypeInfo[]>();
-  for (const t of types) {
+  for (const t of allTypes) {
     if (!categories.has(t.category)) categories.set(t.category, []);
     categories.get(t.category)!.push(t);
   }

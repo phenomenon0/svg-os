@@ -5,11 +5,12 @@
 import "tldraw/tldraw.css";
 import { Tldraw } from "tldraw";
 import { SvgTemplateShapeUtil } from "./shapes/SvgTemplateShape";
+import { HtmlShapeUtil } from "./shapes/HtmlShape";
 import { NodePalette } from "./NodePalette";
 import { initWasm } from "./lib/wasm-bridge";
 import { useEffect, useState } from "react";
 
-const customShapeUtils = [SvgTemplateShapeUtil];
+const customShapeUtils = [SvgTemplateShapeUtil, HtmlShapeUtil];
 
 export function App() {
   const [wasmLoaded, setWasmLoaded] = useState(false);
