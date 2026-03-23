@@ -52,7 +52,7 @@ export class WebViewShapeUtil extends ShapeUtil<WebViewShape> {
     return {
       w: 480,
       h: 360,
-      url: "https://en.m.wikipedia.org/wiki/Emergence",
+      url: "https://femiadeniran.com",
       label: "WebView",
       mode: "url",
       htmlContent: WEBGL_STARTER,
