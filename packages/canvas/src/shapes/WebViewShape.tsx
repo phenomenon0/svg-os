@@ -194,7 +194,7 @@ function WebViewContent({
       </div>
       <iframe
         src={activeUrl}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation allow-modals allow-presentation allow-downloads"
         style={{
           border: "none",
           width: "100%",

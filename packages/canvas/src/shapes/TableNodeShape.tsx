@@ -17,7 +17,7 @@ import {
   Vec,
   useEditor,
 } from "tldraw";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback } from "react";
 import { Port } from "../Port";
 import { listNodeTypes } from "@svg-os/bridge";
 
@@ -118,7 +118,7 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
   }, [rows, updateData]);
 
   const renameColumn = useCallback((oldName: string, newName: string) => {
-    if (!newName || newName === oldName) { setEditingHeader(null); return; }
+    if (!newName || newName === oldName) { return; }
     const newRows = rows.map(row => {
       const newRow: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(row)) {
@@ -127,7 +127,7 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
       return newRow;
     });
     updateData(newRows);
-    setEditingHeader(null);
+    // Header input will reset via key prop
   }, [rows, updateData]);
 
   const addRow = useCallback(() => {
@@ -181,22 +181,11 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
               const types = listNodeTypes();
               const nt = types.find((t: any) => t.id === typeId);
               if (nt?.slots) {
-                const slotFields = nt.slots.map((s: any) => s.field);
-                const newCols = slotFields.filter((f: string) => !columns.includes(f));
-                if (newCols.length > 0) {
-                  if (rows.length === 0) {
-                    const emptyRow: Record<string, unknown> = {};
-                    [...columns, ...newCols].forEach(c => emptyRow[c] = "");
-                    updateData([emptyRow]);
-                  } else {
-                    const newRows = rows.map(row => {
-                      const updated = { ...row };
-                      newCols.forEach((c: string) => { updated[c] = ""; });
-                      return updated;
-                    });
-                    updateData(newRows);
-                  }
-                }
+                const slotFields: string[] = nt.slots.map((s: any) => s.field);
+                // Replace all columns with View's slots (wipe prior, undoable)
+                const emptyRow: Record<string, unknown> = {};
+                slotFields.forEach((c: string) => { emptyRow[c] = ""; });
+                updateData([emptyRow]);
               }
             } catch { /* */ }
           }
@@ -293,6 +282,7 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
                     <td key={col} style={{ ...tdStyle, padding: 0, minWidth: 50 }}>
                       <CellInput
                         value={String(row[col] ?? "")}
+                        column={col}
                         onChange={(val) => setCellValue(ri, col, val)}
                       />
                     </td>
@@ -495,9 +485,26 @@ function HeaderInput({ defaultValue, onCommit, onCancel }: {
   );
 }
 
+// Column names that should get a color picker
+const COLOR_COLUMNS = new Set([
+  "color", "fill", "stroke", "accent", "background",
+  "color_a", "color_b", "team_color", "stop_color",
+  "flood_color", "bg", "fg",
+]);
+
+function isColorColumn(col: string): boolean {
+  const key = col.toLowerCase().replace(/[\s-]/g, "_");
+  return COLOR_COLUMNS.has(key) || key.endsWith("_color") || key.endsWith("_fill");
+}
+
 /** Always-visible input cell. Uses ref callback to attach native capture-phase
  *  event listener so it intercepts before tldraw's shape handler. */
-function CellInput({ value, onChange }: { value: string; onChange: (val: string) => void }) {
+function CellInput({ value, column, onChange }: { value: string; column: string; onChange: (val: string) => void }) {
+  const isColor = isColorColumn(column);
+
+  if (isColor) {
+    return <ColorCellInput value={value} onChange={onChange} />;
+  }
   const cleanupRef = useRef<(() => void) | null>(null);
 
   const inputRef = useCallback((el: HTMLInputElement | null) => {
@@ -539,5 +546,45 @@ function CellInput({ value, onChange }: { value: string; onChange: (val: string)
         outline: "none", boxSizing: "border-box",
       }}
     />
+  );
+}
+
+/** Color cell — shows a swatch + color picker input. */
+function ColorCellInput({ value, onChange }: { value: string; onChange: (val: string) => void }) {
+  const cleanupRef = useRef<(() => void) | null>(null);
+  const containerRef = useCallback((el: HTMLDivElement | null) => {
+    if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
+    if (!el) return;
+    const handler = (e: PointerEvent) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    };
+    el.addEventListener("pointerdown", handler, { capture: true });
+    cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
+  }, []);
+
+  const color = value && value.startsWith("#") ? value : "#64748b";
+
+  return (
+    <div ref={containerRef} style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 4px" }}>
+      <input
+        type="color"
+        value={color}
+        onChange={(e) => onChange(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: 20, height: 20, border: "none", padding: 0, cursor: "pointer", background: "transparent" }}
+      />
+      <input
+        type="text"
+        defaultValue={value}
+        key={value}
+        onBlur={(e) => { if (e.target.value !== value) onChange(e.target.value); }}
+        onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+        style={{
+          flex: 1, padding: "1px 4px", background: "transparent", border: "none",
+          color: "#cbd5e1", fontSize: 10, fontFamily: "monospace", outline: "none",
+        }}
+      />
+    </div>
   );
 }
