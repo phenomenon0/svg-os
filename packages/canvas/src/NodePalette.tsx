@@ -74,6 +74,7 @@ const SECTION_COLORS: Record<string, string> = {
   transform: "#8b5cf6",
   views: "#06b6d4",
   web: "#f97316",
+  compute: "#22c55e",
 };
 
 export function NodePalette() {
@@ -240,6 +241,22 @@ export function NodePalette() {
     [editor]
   );
 
+  const placeTerminal = useCallback(() => {
+    const o = offset();
+    const center = editor.getViewportScreenCenter();
+    editor.createShape({
+      type: "terminal-node",
+      x: center.x - 200 + o.x,
+      y: center.y - 140 + o.y,
+      props: { w: 400, h: 280, label: "Terminal", mode: "js",
+        history: JSON.stringify([
+          { type: "output", text: "SVG OS Terminal — JavaScript sandbox" },
+          { type: "output", text: "Type expressions, see results. Try: 1 + 1" },
+        ]),
+      },
+    });
+  }, [editor]);
+
   const placeWebView = useCallback(() => {
     const o = offset();
     const center = editor.getViewportScreenCenter();
@@ -377,6 +394,24 @@ export function NodePalette() {
               onClick={() => placeHtmlView(hv)}
             />
           ))}
+        </div>
+      )}
+
+      {/* ── COMPUTE ───────────────────────────────────────────────────── */}
+      <SectionHeader
+        label="Compute"
+        color={SECTION_COLORS.compute}
+        collapsed={!!collapsed.compute}
+        onToggle={() => toggleCategory("compute")}
+      />
+      {!collapsed.compute && (
+        <div style={{ padding: "0 4px 4px" }}>
+          <PaletteItem
+            icon="▶"
+            label="Terminal"
+            accent={SECTION_COLORS.compute}
+            onClick={placeTerminal}
+          />
         </div>
       )}
 

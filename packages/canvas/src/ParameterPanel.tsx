@@ -11,10 +11,11 @@ import type { ViewNodeShape } from "./shapes/ViewNodeShape";
 import type { TableNodeShape } from "./shapes/TableNodeShape";
 import type { MultiplexerNodeShape } from "./shapes/MultiplexerNodeShape";
 import type { WebViewShape } from "./shapes/WebViewShape";
+import type { TerminalNodeShape } from "./shapes/TerminalNodeShape";
 
-type AnyNodeShape = DataNodeShape | TransformNodeShape | ViewNodeShape | TableNodeShape | MultiplexerNodeShape | WebViewShape;
+type AnyNodeShape = DataNodeShape | TransformNodeShape | ViewNodeShape | TableNodeShape | MultiplexerNodeShape | WebViewShape | TerminalNodeShape;
 
-const NODE_TYPES = ["data-node", "transform-node", "view-node", "table-node", "multiplexer-node", "web-view"] as const;
+const NODE_TYPES = ["data-node", "transform-node", "view-node", "table-node", "multiplexer-node", "web-view", "terminal-node"] as const;
 
 export function ParameterPanel() {
   const editor = useEditor();
