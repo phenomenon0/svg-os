@@ -2,9 +2,10 @@
  * SVG OS Canvas — tldraw infinite canvas with 3 node primitives:
  * DataNode, TransformNode, ViewNode.
  *
- * Phase 2: The @svg-os/core Runtime runs in parallel with the existing
- * reactive-engine.  A RuntimeBridge component syncs tldraw shapes into
- * the Runtime graph on mount.
+ * Phase 3: The Runtime Scheduler is the single execution engine.
+ * The RuntimeBridge component syncs tldraw changes into the Runtime graph,
+ * triggers scheduler execution, and reads results back into shapes.
+ * The legacy reactive-engine is kept as a fallback until fully verified.
  */
 
 import "tldraw/tldraw.css";
@@ -25,7 +26,13 @@ import { initWasm } from "./lib/wasm-bridge";
 import { wireReactiveEngine } from "./lib/reactive-engine";
 import { useEffect, useState } from "react";
 import { RuntimeProvider, useRuntime } from "./RuntimeContext";
-import { syncShapesToRuntime, clearMappings } from "./lib/runtime-bridge";
+import {
+  syncShapesToRuntime,
+  syncEdgesToRuntime,
+  syncNodeConfig,
+  syncRuntimeToShapes,
+  clearMappings,
+} from "./lib/runtime-bridge";
 
 const customShapeUtils = [
   DataNodeShapeUtil,
@@ -42,25 +49,79 @@ const customShapeUtils = [
 /**
  * RuntimeBridge — invisible component that lives inside the tldraw tree
  * (so it has access to useEditor) AND inside the RuntimeProvider (so it
- * has access to useRuntime).  On mount it syncs every existing tldraw
- * shape into the Runtime graph.
+ * has access to useRuntime).
+ *
+ * Phase 3: this is the primary execution path.  It detects tldraw store
+ * changes, syncs them into the Runtime graph, calls the Scheduler, and
+ * reads results back into tldraw shapes.
  */
+let pendingRun = false;
+function scheduleRun(runtime: ReturnType<typeof useRuntime>) {
+  if (pendingRun) return;
+  pendingRun = true;
+  requestAnimationFrame(() => {
+    pendingRun = false;
+    runtime.run().catch(console.error);
+  });
+}
+
 function RuntimeBridge() {
   const editor = useEditor();
   const runtime = useRuntime();
 
   useEffect(() => {
-    // Sync current page shapes into the Runtime graph
+    // ── Initial sync: shapes + edges ──────────────────────────────────
     syncShapesToRuntime(editor, runtime);
+    syncEdgesToRuntime(editor, runtime);
 
-    // Listen for runtime node updates — future use for syncing back
-    const unsub = runtime.events.on("node:updated", (_event) => {
-      // Phase 3 will sync Runtime state back into tldraw shapes.
-      // For now this is a no-op listener to verify the event bus works.
+    // Kick an initial execution so nodes start with computed state
+    scheduleRun(runtime);
+
+    // ── Watch shape prop changes -> push config + schedule ────────────
+    const unsubShape = editor.sideEffects.registerAfterChangeHandler(
+      "shape",
+      (prev, next) => {
+        if (prev.props === next.props) return;
+        syncNodeConfig(
+          next.id,
+          next.props as Record<string, unknown>,
+          runtime,
+        );
+        scheduleRun(runtime);
+      },
+    );
+
+    // ── Watch binding changes -> rebuild edges + schedule ─────────────
+    const unsubStore = editor.store.listen(
+      (entry) => {
+        let bindingChanged = false;
+        for (const record of Object.values(entry.changes.added)) {
+          if (record.typeName === "binding") bindingChanged = true;
+        }
+        for (const record of Object.values(entry.changes.removed)) {
+          if (record.typeName === "binding") bindingChanged = true;
+        }
+        if (bindingChanged) {
+          // Clear and rebuild all runtime edges
+          for (const edge of runtime.graph.getEdges()) {
+            runtime.graph.removeEdge(edge.id);
+          }
+          syncEdgesToRuntime(editor, runtime);
+          scheduleRun(runtime);
+        }
+      },
+      { source: "all", scope: "document" },
+    );
+
+    // ── After scheduler finishes -> sync results back to shapes ──────
+    const unsubExec = runtime.events.on("exec:complete", () => {
+      syncRuntimeToShapes(editor, runtime);
     });
 
     return () => {
-      unsub();
+      unsubShape();
+      unsubStore();
+      unsubExec();
       clearMappings();
     };
   }, [editor, runtime]);

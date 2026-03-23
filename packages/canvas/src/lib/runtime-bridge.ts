@@ -2,14 +2,13 @@
  * runtime-bridge — bidirectional mapping between tldraw shape IDs and
  * @svg-os/core Runtime node IDs.
  *
- * During the Phase 2 migration the canvas keeps both systems alive:
- *   - tldraw shapes own the visual state (position, size, props)
- *   - the Runtime graph mirrors the logical node topology
- *
+ * Phase 3: The Runtime Scheduler is the single execution engine.
  * This bridge:
  *   1. Maintains a shapeId <-> nodeId mapping
  *   2. Syncs existing tldraw shapes into the Runtime on startup
- *   3. Provides lookup helpers used by shape components and the palette
+ *   3. Syncs tldraw arrow bindings as Runtime edges
+ *   4. Pushes config changes into Runtime nodes
+ *   5. Reads Runtime outputs back into tldraw shapes
  */
 
 import type { Runtime } from "@svg-os/core";
@@ -103,5 +102,103 @@ export function syncShapesToRuntime(editor: Editor, runtime: Runtime): void {
     } catch {
       // Node type not registered in the runtime — skip silently
     }
+  }
+}
+
+// ── Phase 3: Edge sync — tldraw arrows -> Runtime edges ─────────────────
+
+/**
+ * Walk every arrow on the current page and mirror its bindings as Runtime
+ * graph edges.  Call this after clearing existing edges when bindings change.
+ */
+export function syncEdgesToRuntime(editor: Editor, runtime: Runtime): void {
+  const shapes = editor.getCurrentPageShapes();
+  const arrows = shapes.filter((s) => s.type === "arrow");
+
+  for (const arrow of arrows) {
+    const bindings = editor.getBindingsFromShape(arrow.id, "arrow");
+    const startBinding = bindings.find(
+      (b) => (b.props as Record<string, unknown>).terminal === "start",
+    );
+    const endBinding = bindings.find(
+      (b) => (b.props as Record<string, unknown>).terminal === "end",
+    );
+
+    if (startBinding && endBinding) {
+      const fromNodeId = getNodeId(startBinding.toId);
+      const toNodeId = getNodeId(endBinding.toId);
+      if (fromNodeId && toNodeId) {
+        const fromNode = runtime.graph.getNode(fromNodeId);
+        const toNode = runtime.graph.getNode(toNodeId);
+        if (fromNode && toNode) {
+          const fromDef = runtime.graph.getNodeDef(fromNode.type);
+          const toDef = runtime.graph.getNodeDef(toNode.type);
+          const fromPort = fromDef?.outputs[0]?.name || "data";
+          const toPort = toDef?.inputs[0]?.name || "data";
+
+          try {
+            runtime.graph.addEdge(
+              { node: fromNodeId, port: fromPort },
+              { node: toNodeId, port: toPort },
+            );
+          } catch {
+            // Edge already exists or validation failed — skip silently
+          }
+        }
+      }
+    }
+  }
+}
+
+// ── Phase 3: Config sync — tldraw shape props -> Runtime node config ────
+
+/**
+ * Push a shape's changed props into the matching Runtime node's config.
+ */
+export function syncNodeConfig(
+  shapeId: string,
+  props: Record<string, unknown>,
+  runtime: Runtime,
+): void {
+  const nodeId = getNodeId(shapeId);
+  if (!nodeId) return;
+  runtime.graph.updateNode(nodeId, { config: props });
+}
+
+// ── Phase 3: Output sync — Runtime node data -> tldraw shapes ───────────
+
+/**
+ * After the Scheduler executes, read each node's output data and push
+ * relevant fields back into the corresponding tldraw shape props.
+ *
+ * Currently handles:
+ *   - view:svg-template  → renderedContent
+ *   - view:note          → (reserved for downstream text)
+ *
+ * As node definitions grow richer this function will expand.
+ */
+export function syncRuntimeToShapes(editor: Editor, runtime: Runtime): void {
+  for (const node of runtime.graph.getNodes()) {
+    const shapeId = getShapeId(node.id);
+    if (!shapeId) continue;
+
+    const shape = editor.getShape(shapeId as any);
+    if (!shape) continue;
+
+    // View nodes: the Runtime may have produced rendered SVG content
+    if (node.type === "view:svg-template" && node.data.data != null) {
+      const currentRendered = (shape.props as Record<string, unknown>)
+        .renderedContent as string | undefined;
+      const rendered = node.data.data as string;
+      if (rendered && rendered !== currentRendered) {
+        editor.updateShape({
+          id: shapeId as any,
+          type: "view-node",
+          props: { renderedContent: rendered },
+        });
+      }
+    }
+
+    // Future: sync other node type outputs back to tldraw shapes
   }
 }
