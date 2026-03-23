@@ -267,31 +267,16 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
               <tr>
                 <th style={{ ...thStyle, width: 24, textAlign: "center" }}>#</th>
                 {columns.map(col => (
-                  <th
-                    key={col}
-                    style={thStyle}
-                    onClick={(e) => { e.stopPropagation(); setEditingHeader(col); }}
-                  >
+                  <th key={col} style={thStyle}>
                     {editingHeader === col ? (
-                      <input
+                      <HeaderInput
                         defaultValue={col}
-                        autoFocus
-                        onBlur={(e) => renameColumn(col, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") renameColumn(col, (e.target as HTMLInputElement).value);
-                          if (e.key === "Escape") setEditingHeader(null);
-                          e.stopPropagation();
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          width: "100%", padding: "2px 4px",
-                          background: "#1e3a5f", border: "1px solid #3b82f6",
-                          borderRadius: 2, color: "#e2e8f0",
-                          fontSize: 10, fontFamily: "inherit", outline: "none",
-                        }}
+                        onCommit={(v) => renameColumn(col, v)}
+                        onCancel={() => setEditingHeader(null)}
                       />
-                    ) : col}
+                    ) : (
+                      <ClickableHeader label={col} onClick={() => setEditingHeader(col)} />
+                    )}
                   </th>
                 ))}
                 <th style={{ ...thStyle, width: 24 }}>
@@ -464,14 +449,91 @@ function generateDummy(col: string): unknown {
   return `${col}_${randInt(1, 100)}`;
 }
 
-/** Always-visible input cell. Looks like text until focused. */
-function CellInput({ value, onChange }: { value: string; onChange: (val: string) => void }) {
-  const ref = useRef<HTMLInputElement>(null);
+/** Clickable column header that uses capture-phase to intercept before tldraw. */
+function ClickableHeader({ label, onClick }: { label: string; onClick: () => void }) {
+  const cleanupRef = useRef<(() => void) | null>(null);
+  const spanRef = useCallback((el: HTMLSpanElement | null) => {
+    if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
+    if (!el) return;
+    const handler = (e: PointerEvent) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      onClick();
+    };
+    el.addEventListener("pointerdown", handler, { capture: true });
+    cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
+  }, [onClick]);
+
+  return (
+    <span ref={spanRef} style={{ cursor: "pointer", display: "block", width: "100%" }}>
+      {label}
+    </span>
+  );
+}
+
+/** Column header rename input with capture-phase event interception. */
+function HeaderInput({ defaultValue, onCommit, onCancel }: {
+  defaultValue: string;
+  onCommit: (val: string) => void;
+  onCancel: () => void;
+}) {
+  const cleanupRef = useRef<(() => void) | null>(null);
+  const inputRef = useCallback((el: HTMLInputElement | null) => {
+    if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
+    if (!el) return;
+    el.focus();
+    el.select();
+    const handler = (e: PointerEvent) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    };
+    el.addEventListener("pointerdown", handler, { capture: true });
+    cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
+  }, []);
+
   return (
     <input
-      ref={ref}
+      ref={inputRef}
+      defaultValue={defaultValue}
+      onBlur={(e) => onCommit(e.target.value)}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") onCommit((e.target as HTMLInputElement).value);
+        if (e.key === "Escape") onCancel();
+      }}
+      style={{
+        width: "100%", padding: "2px 4px",
+        background: "#1e3a5f", border: "1px solid #3b82f6",
+        borderRadius: 2, color: "#e2e8f0",
+        fontSize: 10, fontFamily: "inherit", outline: "none",
+      }}
+    />
+  );
+}
+
+/** Always-visible input cell. Uses ref callback to attach native capture-phase
+ *  event listener so it intercepts before tldraw's shape handler. */
+function CellInput({ value, onChange }: { value: string; onChange: (val: string) => void }) {
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  const inputRef = useCallback((el: HTMLInputElement | null) => {
+    if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
+    if (!el) return;
+
+    const handler = (e: PointerEvent) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      // Don't preventDefault — let the input get native focus
+    };
+    el.addEventListener("pointerdown", handler, { capture: true });
+    cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
       defaultValue={value}
-      key={value} // reset when external data changes
+      key={value}
       onBlur={(e) => {
         if (e.target.value !== value) onChange(e.target.value);
         e.target.style.background = "transparent";
@@ -484,8 +546,6 @@ function CellInput({ value, onChange }: { value: string; onChange: (val: string)
         e.stopPropagation();
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
       }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
       style={{
         width: "100%", padding: "3px 6px",
         background: "transparent", border: "none",
