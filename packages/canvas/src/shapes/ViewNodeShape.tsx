@@ -95,7 +95,7 @@ export class ViewNodeShapeUtil extends ShapeUtil<ViewNodeShape> {
         <div
           style={{
             position: "absolute",
-            left: -5,
+            left: -7,
             top: "50%",
             transform: "translateY(-50%)",
             width: 10,

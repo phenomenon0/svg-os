@@ -111,7 +111,7 @@ export class DataNodeShapeUtil extends ShapeUtil<DataNodeShape> {
           <div
             style={{
               position: "absolute",
-              right: -5,
+              right: -7,
               top: "50%",
               transform: "translateY(-50%)",
               width: 10,

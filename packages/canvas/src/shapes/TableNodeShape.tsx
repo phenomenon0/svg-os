@@ -189,15 +189,15 @@ function TableNodeComponent({ shape }: { shape: TableNodeShape }) {
 
         {/* Input port (left) */}
         <div style={{
-          position: "absolute", left: -5, top: "50%", transform: "translateY(-50%)",
-          width: 10, height: 10, borderRadius: "50%",
+          position: "absolute", left: -7, top: "50%", transform: "translateY(-50%)",
+          width: 14, height: 14, borderRadius: "50%",
           background: "#06b6d4", border: "2px solid #0f172a",
         }} />
 
         {/* Output port (right) */}
         <div style={{
-          position: "absolute", right: -5, top: "50%", transform: "translateY(-50%)",
-          width: 10, height: 10, borderRadius: "50%",
+          position: "absolute", right: -7, top: "50%", transform: "translateY(-50%)",
+          width: 14, height: 14, borderRadius: "50%",
           background: "#3b82f6", border: "2px solid #0f172a",
         }} />
       </div>

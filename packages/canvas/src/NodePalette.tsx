@@ -257,6 +257,7 @@ export function NodePalette() {
         borderRight: "1px solid #334155",
         overflowY: "auto",
         zIndex: 1000,
+        pointerEvents: "all",
         fontFamily: "Inter, system-ui, sans-serif",
       }}
     >

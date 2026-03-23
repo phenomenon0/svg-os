@@ -8,10 +8,12 @@ import { listNodeTypes } from "@svg-os/bridge";
 import type { DataNodeShape } from "./shapes/DataNodeShape";
 import type { TransformNodeShape } from "./shapes/TransformNodeShape";
 import type { ViewNodeShape } from "./shapes/ViewNodeShape";
+import type { TableNodeShape } from "./shapes/TableNodeShape";
+import type { MultiplexerNodeShape } from "./shapes/MultiplexerNodeShape";
 
-type AnyNodeShape = DataNodeShape | TransformNodeShape | ViewNodeShape;
+type AnyNodeShape = DataNodeShape | TransformNodeShape | ViewNodeShape | TableNodeShape | MultiplexerNodeShape;
 
-const NODE_TYPES = ["data-node", "transform-node", "view-node"] as const;
+const NODE_TYPES = ["data-node", "transform-node", "view-node", "table-node", "multiplexer-node"] as const;
 
 export function ParameterPanel() {
   const editor = useEditor();
@@ -43,6 +45,7 @@ export function ParameterPanel() {
         borderLeft: "1px solid #334155",
         overflowY: "auto",
         zIndex: 1000,
+        pointerEvents: "all",
         fontFamily: "'Inter', system-ui, sans-serif",
         fontSize: 12,
         color: "#e2e8f0",
@@ -73,6 +76,12 @@ export function ParameterPanel() {
       )}
       {selectedShape.type === "view-node" && (
         <ViewNodeParams shape={selectedShape as ViewNodeShape} editor={editor} />
+      )}
+      {selectedShape.type === "table-node" && (
+        <TableNodeParams shape={selectedShape as TableNodeShape} editor={editor} />
+      )}
+      {selectedShape.type === "multiplexer-node" && (
+        <MultiplexerNodeParams shape={selectedShape as MultiplexerNodeShape} editor={editor} />
       )}
     </div>
   );
@@ -349,6 +358,77 @@ function ViewNodeParams({
       <ParamGroup label="Position">
         <ParamRow label="X" value={String(Math.round(shape.x))} readonly />
         <ParamRow label="Y" value={String(Math.round(shape.y))} readonly />
+      </ParamGroup>
+    </div>
+  );
+}
+
+// ── TableNode Panel ──────────────────────────────────────────────────────────
+
+function TableNodeParams({ shape, editor }: { shape: TableNodeShape; editor: ReturnType<typeof useEditor> }) {
+  const { label, dataJson, outputMode } = shape.props;
+  let rowCount = 0;
+  try { rowCount = JSON.parse(dataJson).length; } catch { /* */ }
+
+  const updateProp = (key: string, value: unknown) => {
+    editor.updateShape({ id: shape.id, type: "table-node", props: { [key]: value } });
+  };
+
+  return (
+    <div style={{ padding: 12 }}>
+      <ParamGroup label="Table">
+        <ParamRow label="Label" value={label} onChange={(v) => updateProp("label", v)} />
+        <ParamRow label="Rows" value={String(rowCount)} readonly />
+        <ParamRow label="Mode" value={outputMode} onChange={(v) => updateProp("outputMode", v)} />
+      </ParamGroup>
+      <ParamGroup label="Data">
+        <textarea
+          value={dataJson}
+          onChange={(e) => updateProp("dataJson", e.target.value)}
+          style={{
+            width: "100%", minHeight: 120, padding: "6px 8px",
+            background: "#0f172a", border: "1px solid #334155",
+            borderRadius: 4, color: "#e2e8f0", fontSize: 10,
+            fontFamily: "'JetBrains Mono', monospace", resize: "vertical", lineHeight: 1.4,
+          }}
+        />
+      </ParamGroup>
+    </div>
+  );
+}
+
+// ── MultiplexerNode Panel ───────────────────────────────────────────────────
+
+function MultiplexerNodeParams({ shape, editor }: { shape: MultiplexerNodeShape; editor: ReturnType<typeof useEditor> }) {
+  const { label, templateId, maxItems } = shape.props;
+
+  let templates: Array<{ id: string; name: string }> = [];
+  try { templates = listNodeTypes().map(t => ({ id: t.id, name: t.name })); } catch { /* */ }
+
+  const updateProp = (key: string, value: unknown) => {
+    editor.updateShape({ id: shape.id, type: "multiplexer-node", props: { [key]: value } });
+  };
+
+  return (
+    <div style={{ padding: 12 }}>
+      <ParamGroup label="Multiplexer">
+        <ParamRow label="Label" value={label} onChange={(v) => updateProp("label", v)} />
+        <ParamRow label="Max" value={String(maxItems)} onChange={(v) => updateProp("maxItems", parseInt(v) || 5)} />
+      </ParamGroup>
+      <ParamGroup label="Template">
+        <div style={{ fontSize: 10, color: "#64748b", marginBottom: 4 }}>Select template for rendering</div>
+        <select
+          value={templateId}
+          onChange={(e) => updateProp("templateId", e.target.value)}
+          style={{
+            width: "100%", padding: "4px 6px",
+            background: "#0f172a", border: "1px solid #334155",
+            borderRadius: 4, color: "#e2e8f0", fontSize: 11,
+          }}
+        >
+          <option value="">-- none --</option>
+          {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
       </ParamGroup>
     </div>
   );

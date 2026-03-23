@@ -224,8 +224,8 @@ function MultiplexerComponent({ shape }: { shape: MultiplexerNodeShape }) {
 
         {/* Input port (left) */}
         <div style={{
-          position: "absolute", left: -5, top: "50%", transform: "translateY(-50%)",
-          width: 10, height: 10, borderRadius: "50%",
+          position: "absolute", left: -7, top: "50%", transform: "translateY(-50%)",
+          width: 14, height: 14, borderRadius: "50%",
           background: "#ec4899", border: "2px solid #0f172a",
         }} />
       </div>
