@@ -99,23 +99,24 @@ export function NodePalette() {
 
   // ── Place handlers ─────────────────────────────────────────────────────────
 
-  // Spread nodes horizontally — each new node goes further right
+  // Place near the last pointer position on the canvas, with slight offset per placement
   const placementCount = useRef(0);
-  const offset = () => {
+  const getPlacement = (w: number, h: number) => {
     const i = placementCount.current++;
+    // Use the center of the viewport as base, offset each placement
+    const center = editor.getViewportScreenCenter();
     return {
-      x: (i % 4) * 250 - 375,  // spread across 1000px
-      y: Math.floor(i / 4) * 200 - 100,
+      x: center.x - w / 2 + (i % 3) * 60 - 60,
+      y: center.y - h / 2 + Math.floor(i / 3) * 60 - 30,
     };
   };
 
   const placeDataNode = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
+    const pos = getPlacement(160, 48);
     editor.createShape({
       type: "data-node",
-      x: center.x - 80 + o.x,
-      y: center.y - 24 + o.y,
+      x: pos.x,
+      y: pos.y,
       props: {
         w: 160,
         h: 48,
@@ -126,12 +127,11 @@ export function NodePalette() {
   }, [editor]);
 
   const placeTransformNode = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
+    const pos = getPlacement(180, 48);
     editor.createShape({
       type: "transform-node",
-      x: center.x - 90 + o.x,
-      y: center.y - 24 + o.y,
+      x: pos.x,
+      y: pos.y,
       props: {
         w: 180,
         h: 48,
@@ -142,12 +142,11 @@ export function NodePalette() {
   }, [editor]);
 
   const placeTableNode = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
+    const pos = getPlacement(320, 240);
     editor.createShape({
       type: "table-node",
-      x: center.x - 160 + o.x,
-      y: center.y - 120 + o.y,
+      x: pos.x,
+      y: pos.y,
       props: {
         w: 320, h: 240,
         label: "Table",
@@ -159,12 +158,11 @@ export function NodePalette() {
   }, [editor]);
 
   const placeMultiplexerNode = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
+    const pos = getPlacement(600, 300);
     editor.createShape({
       type: "multiplexer-node",
-      x: center.x - 300 + o.x,
-      y: center.y - 150 + o.y,
+      x: pos.x,
+      y: pos.y,
       props: {
         w: 600, h: 300,
         label: "Multiplexer",
@@ -177,7 +175,6 @@ export function NodePalette() {
 
   const placeSvgView = useCallback(
     (typeId: string) => {
-      const o = offset();
       try {
         const nt = getNodeType(typeId) as {
           template_svg: string;
@@ -192,12 +189,12 @@ export function NodePalette() {
         );
         const w = nt.default_width * scale;
         const h = nt.default_height * scale;
-        const center = editor.getViewportScreenCenter();
+        const pos = getPlacement(w, h);
 
         editor.createShape({
           type: "view-node",
-          x: center.x - w / 2 + o.x,
-          y: center.y - h / 2 + o.y,
+          x: pos.x,
+          y: pos.y,
           props: {
             w,
             h,
@@ -219,12 +216,11 @@ export function NodePalette() {
 
   const placeHtmlView = useCallback(
     (htmlDef: (typeof HTML_VIEWS)[number]) => {
-      const o = offset();
-      const center = editor.getViewportScreenCenter();
+      const pos = getPlacement(htmlDef.w, htmlDef.h);
       editor.createShape({
         type: "view-node",
-        x: center.x - htmlDef.w / 2 + o.x,
-        y: center.y - htmlDef.h / 2 + o.y,
+        x: pos.x,
+        y: pos.y,
         props: {
           w: htmlDef.w,
           h: htmlDef.h,
@@ -242,12 +238,11 @@ export function NodePalette() {
   );
 
   const placeTerminal = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
+    const pos = getPlacement(400, 280);
     editor.createShape({
       type: "terminal-node",
-      x: center.x - 200 + o.x,
-      y: center.y - 140 + o.y,
+      x: pos.x,
+      y: pos.y,
       props: { w: 400, h: 280, label: "Terminal", mode: "js",
         history: JSON.stringify([
           { type: "output", text: "SVG OS Terminal — JavaScript sandbox" },
@@ -258,12 +253,11 @@ export function NodePalette() {
   }, [editor]);
 
   const placeWebView = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
+    const pos = getPlacement(480, 360);
     editor.createShape({
       type: "web-view",
-      x: center.x - 240 + o.x,
-      y: center.y - 180 + o.y,
+      x: pos.x,
+      y: pos.y,
       props: {
         w: 480,
         h: 360,
