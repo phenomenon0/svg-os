@@ -52,7 +52,7 @@ export class WebViewShapeUtil extends ShapeUtil<WebViewShape> {
     return {
       w: 480,
       h: 360,
-      url: "https://en.wikipedia.org/wiki/Emergence",
+      url: "https://femiadeniran.com",
       label: "WebView",
       mode: "url",
       htmlContent: WEBGL_STARTER,
@@ -357,17 +357,27 @@ function WebViewContent({ shape }: { shape: WebViewShape }) {
             }}
           />
         ) : mode === "url" ? (
-          <iframe
-            src={activeUrl}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation allow-modals allow-presentation allow-downloads"
-            allow="accelerometer; camera; encrypted-media; fullscreen; geolocation; gyroscope; microphone; midi; payment; usb; xr-spatial-tracking; webgl; webgl2"
-            style={{
-              border: "none", width: "100%",
-              height: `calc(100% - ${barHeight}px)`,
-              background: "#ffffff",
-            }}
-            title={`WebView: ${activeUrl}`}
-          />
+          <div style={{
+            width: "100%",
+            height: `calc(100% - ${barHeight}px)`,
+            overflow: "hidden",
+            position: "relative",
+          }}>
+            <iframe
+              src={activeUrl}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation allow-modals allow-presentation allow-downloads"
+              allow="accelerometer; camera; encrypted-media; fullscreen; geolocation; gyroscope; microphone; midi; payment; usb; xr-spatial-tracking; webgl; webgl2"
+              style={{
+                border: "none",
+                width: 1280,
+                height: 960,
+                transform: `scale(${Math.min(w / 1280, (h - barHeight) / 960)})`,
+                transformOrigin: "0 0",
+                background: "#ffffff",
+              }}
+              title={`WebView: ${activeUrl}`}
+            />
+          </div>
         ) : (
           <iframe
             srcDoc={localHtml}
