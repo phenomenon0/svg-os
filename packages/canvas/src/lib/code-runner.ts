@@ -8,6 +8,7 @@
  */
 
 import { evalJS, formatResult, type EvalResult } from "./eval-sandbox";
+export { formatResult };
 
 export type Lang = "js" | "python" | "ruby" | "c" | "cpp" | "sql" | "php";
 
