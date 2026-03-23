@@ -82,6 +82,15 @@ async function runViaWasi(
     return { output: [], result: undefined, error: `Unsupported language: ${lang}` };
   }
 
+  // SharedArrayBuffer required for WASI — not available without COOP/COEP headers
+  if (typeof SharedArrayBuffer === "undefined") {
+    return {
+      output: [],
+      result: undefined,
+      error: `${getLangLabel(lang)} requires SharedArrayBuffer (COOP/COEP headers). Use JavaScript mode instead, or run locally with proper headers.`,
+    };
+  }
+
   try {
     // Lazy import Runno
     const { headlessRunCode } = await import("@runno/runtime");
