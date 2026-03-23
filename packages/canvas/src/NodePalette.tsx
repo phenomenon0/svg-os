@@ -545,30 +545,7 @@ export function NodePalette() {
             .map(p => renderItem(p.type, p.label, p.color, () => placeNode(p.type), !isPlaceable(p.type)))}
 
           {/* Templates */}
-          {(hasTemplates || svgTemplates.length > 0) && (
-            <>
-              <CollapsibleHeader
-                text="View"
-                open={sectionsOpen.view}
-                onToggle={() => toggleSection("view")}
-                dotColor={C.accent}
-              />
-              {sectionsOpen.view && viewNodes}
-            </>
-          )}
-
-          {/* Templates */}
-          {(hasTemplates || svgTemplates.length > 0) && (
-            <>
-              <CollapsibleHeader
-                text={`Templates${svgTemplates.length === 0 ? " (loading)" : ""}`}
-                open={sectionsOpen.templates}
-                onToggle={() => toggleSection("templates")}
-                dotColor={C.cyan}
-              />
-              {sectionsOpen.templates && templateNodes}
-            </>
-          )}
+          {/* Templates removed — will improve later */}
         </div>
 
         {/* Settings button */}
