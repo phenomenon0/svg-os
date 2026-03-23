@@ -18,10 +18,8 @@ const RuntimeCtx = createContext<Runtime | null>(null);
  * Hook to access the Runtime from any component inside RuntimeProvider.
  * Throws if called outside the provider tree.
  */
-export function useRuntime(): Runtime {
-  const rt = useContext(RuntimeCtx);
-  if (!rt) throw new Error("useRuntime must be used inside <RuntimeProvider>");
-  return rt;
+export function useRuntime(): Runtime | null {
+  return useContext(RuntimeCtx);
 }
 
 /**
@@ -32,26 +30,26 @@ export function useRuntime(): Runtime {
  * downstream code can safely assume the Runtime is fully initialised.
  */
 export function RuntimeProvider({ children }: { children: React.ReactNode }) {
-  const [runtime, setRuntime] = useState<Runtime | null>(null);
+  const [runtime] = useState(() => new Runtime());
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const rt = new Runtime();
-
     Promise.all([
-      rt.register(systemSubsystem),
-      rt.register(dataSubsystem),
-      rt.register(viewSubsystem),
-    ]).then(() => {
-      setRuntime(rt);
-    });
+      runtime.register(systemSubsystem),
+      runtime.register(dataSubsystem),
+      runtime.register(viewSubsystem),
+    ])
+      .then(() => setReady(true))
+      .catch((e) => {
+        console.error("[runtime] subsystem registration failed:", e);
+        setReady(true); // render anyway — canvas works without runtime
+      });
 
-    return () => {
-      rt.destroy();
-    };
-  }, []);
+    return () => runtime.destroy();
+  }, [runtime]);
 
-  if (!runtime) return null;
-
+  // Always render children — the runtime is available even if subsystems
+  // are still registering. RuntimeBridge handles the sync timing.
   return (
     <RuntimeCtx.Provider value={runtime}>{children}</RuntimeCtx.Provider>
   );

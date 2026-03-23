@@ -25,6 +25,7 @@ import { AIChat } from "./AIChat";
 import { initWasm } from "./lib/wasm-bridge";
 import { wireReactiveEngine } from "./lib/reactive-engine";
 import { useEffect, useState } from "react";
+import type { Runtime } from "@svg-os/core";
 import { RuntimeProvider, useRuntime } from "./RuntimeContext";
 import {
   syncShapesToRuntime,
@@ -56,7 +57,7 @@ const customShapeUtils = [
  * reads results back into tldraw shapes.
  */
 let pendingRun = false;
-function scheduleRun(runtime: ReturnType<typeof useRuntime>) {
+function scheduleRun(runtime: Runtime) {
   if (pendingRun) return;
   pendingRun = true;
   requestAnimationFrame(() => {
@@ -70,6 +71,7 @@ function RuntimeBridge() {
   const runtime = useRuntime();
 
   useEffect(() => {
+    if (!runtime) return;
     // ── Initial sync: shapes + edges ──────────────────────────────────
     syncShapesToRuntime(editor, runtime);
     syncEdgesToRuntime(editor, runtime);
