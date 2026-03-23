@@ -149,9 +149,7 @@ export function NodePalette() {
       props: {
         w: 320, h: 240,
         label: "Table",
-        dataJson: JSON.stringify([
-          { col1: "", col2: "", col3: "" },
-        ]),
+        dataJson: "[]",
         selectedRow: -1,
         filterExpr: "",
         outputMode: "all",

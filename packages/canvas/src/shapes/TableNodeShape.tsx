@@ -52,9 +52,7 @@ export class TableNodeShapeUtil extends ShapeUtil<TableNodeShape> {
       w: 360,
       h: 280,
       label: "Data",
-      dataJson: JSON.stringify([
-        { col1: "", col2: "", col3: "" },
-      ]),
+      dataJson: "[]",
       selectedRow: -1,
       filterExpr: "",
       outputMode: "all",
@@ -141,9 +139,14 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
   }, [rows, columns, updateData]);
 
   const addColumn = useCallback(() => {
-    const name = `col${columns.length + 1}`;
-    const newRows = rows.map(row => ({ ...row, [name]: "" }));
-    updateData(newRows);
+    const suggestions = ["name", "value", "type", "status", "score", "color", "label", "url", "team", "position"];
+    const used = new Set(columns);
+    const name = suggestions.find(s => !used.has(s)) || `field${columns.length + 1}`;
+    if (rows.length === 0) {
+      updateData([{ [name]: "" }]);
+    } else {
+      updateData(rows.map(row => ({ ...row, [name]: "" })));
+    }
   }, [rows, columns, updateData]);
 
   const deleteRow = useCallback((idx: number) => {
@@ -224,6 +227,18 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
 
         {/* Spreadsheet */}
         <div style={{ flex: 1, overflow: "auto" }}>
+          {columns.length === 0 ? (
+            <div style={{
+              height: "100%", display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 8,
+              color: "#475569", fontSize: 11,
+            }}>
+              <div>Empty table</div>
+              <div style={{ fontSize: 10, color: "#334155" }}>
+                Click <b>+</b> to add columns, or connect to a View and click <b>⇄ Sync</b>
+              </div>
+            </div>
+          ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
             <thead>
               <tr>
@@ -288,6 +303,7 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
               ))}
             </tbody>
           </table>
+          )}
         </div>
 
         {/* Footer with add row */}
