@@ -103,7 +103,7 @@ function defaultPropsForShape(shapeType: string): Record<string, unknown> {
     case "note-node":
       return { w: 320, h: 240, label: "Note", content: "", mode: "edit" };
     case "web-view":
-      return { w: 480, h: 360, url: "https://femiadeniran.com", label: "WebView" };
+      return { w: 480, h: 360, url: "https://en.m.wikipedia.org/wiki/Emergence", label: "WebView", mode: "url", htmlContent: "" };
     default:
       return { w: 300, h: 200, label: "Node" };
   }
