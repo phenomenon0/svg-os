@@ -529,72 +529,23 @@ export function NodePalette() {
         {/* Node sections */}
         <div style={{ padding: "6px 4px", flex: 1, overflowY: "auto" }}>
 
-          {/* Blank node — place first, assign type later */}
-          {!q && (
-            <div
-              onClick={() => {
-                const o = offset();
-                const center = editor.getViewportScreenCenter();
-                editor.createShape({
-                  type: "compact-node",
-                  x: center.x - 90 + o.x,
-                  y: center.y - 24 + o.y,
-                  props: { w: 180, h: 48, label: "", nodeType: "", subsystem: "", configJson: "{}" },
-                });
-              }}
-              style={{
-                padding: "8px 10px", margin: "2px 4px 8px",
-                borderRadius: 6, cursor: "pointer",
-                border: `1px dashed ${C.faint}44`,
-                display: "flex", alignItems: "center", gap: 8,
-                fontSize: 12, color: C.muted,
-                fontFamily: FONT.sans,
-                transition: "background 0.12s, border-color 0.12s",
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = C.bgHover; e.currentTarget.style.borderColor = C.accent + "66"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = C.faint + "44"; }}
-            >
-              <span style={{ fontSize: 14, color: C.accent }}>+</span>
-              <span>New Node</span>
-            </div>
-          )}
+          {/* Core primitives — always visible */}
+          <SectionHeader text="Primitives" />
+          {[
+            { type: "view:note", label: "Note", color: C.accent },
+            { type: "data:table", label: "Table", color: C.blue },
+            { type: "sys:terminal", label: "Terminal", color: C.green },
+            { type: "data:json", label: "Data", color: C.green },
+            { type: "sys:notebook", label: "Notebook", color: C.purple },
+            { type: "view:webview", label: "WebView", color: C.cyan },
+            { type: "data:ai", label: "AI", color: C.blue },
+            { type: "data:transform", label: "Transform", color: C.purple },
+          ]
+            .filter(p => matchesFilter(p.type, p.label))
+            .map(p => renderItem(p.type, p.label, p.color, () => placeNode(p.type), !isPlaceable(p.type)))}
 
-          {/* Recently Used */}
-          {hasRecent && !q && (
-            <>
-              <SectionHeader text="Recent" />
-              {recentItems}
-            </>
-          )}
-
-          {/* System */}
-          {hasSystem && (
-            <>
-              <CollapsibleHeader
-                text="System"
-                open={sectionsOpen.system}
-                onToggle={() => toggleSection("system")}
-                dotColor={C.green}
-              />
-              {sectionsOpen.system && systemNodes}
-            </>
-          )}
-
-          {/* Data */}
-          {hasData && (
-            <>
-              <CollapsibleHeader
-                text="Data"
-                open={sectionsOpen.data}
-                onToggle={() => toggleSection("data")}
-                dotColor={C.blue}
-              />
-              {sectionsOpen.data && dataNodes}
-            </>
-          )}
-
-          {/* View */}
-          {hasView && (
+          {/* Templates */}
+          {(hasTemplates || svgTemplates.length > 0) && (
             <>
               <CollapsibleHeader
                 text="View"
