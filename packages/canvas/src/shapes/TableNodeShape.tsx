@@ -61,6 +61,7 @@ export class TableNodeShapeUtil extends ShapeUtil<TableNodeShape> {
   }
 
   override canBind() { return true; }
+  override canEdit() { return false; }
 
   override getHandleSnapGeometry(shape: TableNodeShape) {
     return {

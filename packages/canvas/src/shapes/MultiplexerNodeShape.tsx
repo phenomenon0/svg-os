@@ -63,6 +63,7 @@ export class MultiplexerNodeShapeUtil extends ShapeUtil<MultiplexerNodeShape> {
   }
 
   override canBind() { return true; }
+  override canEdit() { return false; }
 
   override getHandleSnapGeometry(shape: MultiplexerNodeShape) {
     return {

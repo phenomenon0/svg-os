@@ -24,6 +24,7 @@ export class DataNodeShapeUtil extends ShapeUtil<DataNodeShape> {
   }
 
   override canBind() { return true; }
+  override canEdit() { return false; }
 
   override getHandleSnapGeometry(shape: DataNodeShape) {
     return { points: [new Vec(shape.props.w, shape.props.h / 2)] };
