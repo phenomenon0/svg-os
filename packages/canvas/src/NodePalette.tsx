@@ -1,6 +1,6 @@
 /**
- * Node Palette — sidebar listing SVG OS node types.
- * Click to place a template shape on the canvas.
+ * Node Palette — sidebar with 3 sections: DATA, TRANSFORM, VIEWS.
+ * Click to place the corresponding shape primitive on the canvas.
  */
 
 import { useEditor } from "tldraw";
@@ -16,189 +16,424 @@ interface NodeTypeInfo {
   default_height: number;
 }
 
-const HTML_NODE_TYPES = [
-  { id: "html-dashboard", name: "Dashboard", variant: "dashboard", w: 220, h: 160, title: "System Monitor", content: "CPU: 42%,Memory: 68%,Disk: 23%,Network: 1.2GB/s" },
-  { id: "html-table", name: "Data Table", variant: "table", w: 200, h: 150, title: "Data Table", content: "Name,Status,Score\nAlice,Active,95\nBob,Idle,82\nCarol,Active,91" },
-  { id: "html-terminal", name: "Terminal", variant: "terminal", w: 220, h: 150, title: "Terminal", content: "" },
-  { id: "html-metric", name: "Metric", variant: "metric", w: 140, h: 90, title: "Total Users", content: "1,247" },
-  { id: "html-markdown", name: "Markdown", variant: "markdown", w: 200, h: 160, title: "Notes", content: "" },
-  { id: "html-card", name: "HTML Card", variant: "card", w: 180, h: 120, title: "Custom Node", content: "" },
+// ── HTML view definitions ─────────────────────────────────────────────────────
+
+const HTML_VIEWS = [
+  {
+    id: "html-dashboard",
+    name: "Dashboard",
+    variant: "dashboard",
+    w: 220,
+    h: 160,
+    title: "System Monitor",
+    content: "CPU: 42%,Memory: 68%,Disk: 23%,Network: 1.2GB/s",
+  },
+  {
+    id: "html-table",
+    name: "Data Table",
+    variant: "table",
+    w: 200,
+    h: 150,
+    title: "Data Table",
+    content:
+      "Name,Status,Score\nAlice,Active,95\nBob,Idle,82\nCarol,Active,91",
+  },
+  {
+    id: "html-terminal",
+    name: "Terminal",
+    variant: "terminal",
+    w: 220,
+    h: 150,
+    title: "Terminal",
+    content: "",
+  },
+  {
+    id: "html-metric",
+    name: "Metric",
+    variant: "metric",
+    w: 140,
+    h: 90,
+    title: "Total Users",
+    content: "1,247",
+  },
+  {
+    id: "html-markdown",
+    name: "Markdown",
+    variant: "markdown",
+    w: 200,
+    h: 160,
+    title: "Notes",
+    content: "",
+  },
 ];
+
+// ── Section accent colors ────────────────────────────────────────────────────
+
+const SECTION_COLORS: Record<string, string> = {
+  data: "#22c55e",
+  transform: "#8b5cf6",
+  views: "#06b6d4",
+};
 
 export function NodePalette() {
   const editor = useEditor();
-  const [types, setTypes] = useState<NodeTypeInfo[]>([]);
+  const [svgTemplates, setSvgTemplates] = useState<NodeTypeInfo[]>([]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    // Poll for types until they're loaded (WASM async init)
     const interval = setInterval(() => {
       try {
         const t = listNodeTypes();
         if (t.length > 0) {
-          setTypes(t);
+          setSvgTemplates(t);
           clearInterval(interval);
         }
-      } catch { /* WASM not ready yet */ }
+      } catch {
+        /* WASM not ready yet */
+      }
     }, 500);
     return () => clearInterval(interval);
   }, []);
 
-  const handlePlace = useCallback((typeId: string) => {
-    // Offset each placement so nodes don't stack exactly
-    const offset = { x: (Math.random() - 0.5) * 100, y: (Math.random() - 0.5) * 80 };
+  // ── Place handlers ─────────────────────────────────────────────────────────
 
-    // Check if it's an HTML node type
-    const htmlType = HTML_NODE_TYPES.find(h => h.id === typeId);
-    if (htmlType) {
-      const center = editor.getViewportScreenCenter();
-      editor.createShape({
-        type: "html",
-        x: center.x - htmlType.w / 2 + offset.x,
-        y: center.y - htmlType.h / 2 + offset.y,
-        props: {
-          w: htmlType.w,
-          h: htmlType.h,
-          variant: htmlType.variant,
-          title: htmlType.title,
-          content: htmlType.content,
-        },
-      });
-      return;
-    }
+  const offset = () => ({
+    x: (Math.random() - 0.5) * 100,
+    y: (Math.random() - 0.5) * 80,
+  });
 
-    // SVG template shape
-    try {
-      const nt = getNodeType(typeId) as { template_svg: string; default_width: number; default_height: number };
-      const maxSize = 140;
-      const scale = Math.min(maxSize / nt.default_width, maxSize / nt.default_height, 1);
-      const w = nt.default_width * scale;
-      const h = nt.default_height * scale;
-      const center = editor.getViewportScreenCenter();
-
-      editor.createShape({
-        type: "svg-template",
-        x: center.x - w / 2 + offset.x,
-        y: center.y - h / 2 + offset.y,
-        props: {
-          w,
-          h,
-          typeId,
-          svgContent: nt.template_svg,
-        },
-      });
-    } catch (e) {
-      console.error(`Failed to place ${typeId}:`, e);
-    }
+  const placeDataNode = useCallback(() => {
+    const o = offset();
+    const center = editor.getViewportScreenCenter();
+    editor.createShape({
+      type: "data-node",
+      x: center.x - 80 + o.x,
+      y: center.y - 24 + o.y,
+      props: {
+        w: 160,
+        h: 48,
+        dataJson: '{"name": "Example", "score": 95}',
+        label: "Data",
+      },
+    });
   }, [editor]);
 
-  // HTML node types (not from WASM — defined inline)
-  const htmlTypes: NodeTypeInfo[] = HTML_NODE_TYPES.map(h => ({
-    id: h.id, name: h.name, category: "html",
-    slots: [], default_width: h.w, default_height: h.h,
-  }));
+  const placeTransformNode = useCallback(() => {
+    const o = offset();
+    const center = editor.getViewportScreenCenter();
+    editor.createShape({
+      type: "transform-node",
+      x: center.x - 90 + o.x,
+      y: center.y - 24 + o.y,
+      props: {
+        w: 180,
+        h: 48,
+        expression: "$.value",
+        label: "Transform",
+      },
+    });
+  }, [editor]);
 
-  // Group by category
-  const allTypes = [...types, ...htmlTypes];
-  const categories = new Map<string, NodeTypeInfo[]>();
-  for (const t of allTypes) {
-    if (!categories.has(t.category)) categories.set(t.category, []);
-    categories.get(t.category)!.push(t);
-  }
+  const placeSvgView = useCallback(
+    (typeId: string) => {
+      const o = offset();
+      try {
+        const nt = getNodeType(typeId) as {
+          template_svg: string;
+          default_width: number;
+          default_height: number;
+        };
+        const maxSize = 200;
+        const scale = Math.min(
+          maxSize / nt.default_width,
+          maxSize / nt.default_height,
+          1
+        );
+        const w = nt.default_width * scale;
+        const h = nt.default_height * scale;
+        const center = editor.getViewportScreenCenter();
+
+        editor.createShape({
+          type: "view-node",
+          x: center.x - w / 2 + o.x,
+          y: center.y - h / 2 + o.y,
+          props: {
+            w,
+            h,
+            viewType: "svg-template",
+            typeId,
+            renderedContent: nt.template_svg,
+            variant: "",
+            htmlTitle: "",
+            htmlContent: "",
+          },
+        });
+      } catch (e) {
+        console.error(`Failed to place SVG view ${typeId}:`, e);
+      }
+    },
+    [editor]
+  );
+
+  const placeHtmlView = useCallback(
+    (htmlDef: (typeof HTML_VIEWS)[number]) => {
+      const o = offset();
+      const center = editor.getViewportScreenCenter();
+      editor.createShape({
+        type: "view-node",
+        x: center.x - htmlDef.w / 2 + o.x,
+        y: center.y - htmlDef.h / 2 + o.y,
+        props: {
+          w: htmlDef.w,
+          h: htmlDef.h,
+          viewType: `html-${htmlDef.variant}`,
+          typeId: "",
+          renderedContent: "",
+          variant: htmlDef.variant,
+          htmlTitle: htmlDef.title,
+          htmlContent: htmlDef.content,
+        },
+      });
+    },
+    [editor]
+  );
 
   const toggleCategory = (cat: string) => {
     setCollapsed((prev) => ({ ...prev, [cat]: !prev[cat] }));
   };
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
-    <div style={{
-      position: "absolute",
-      left: 0,
-      top: 0,
-      bottom: 0,
-      width: 200,
-      background: "#151d2e",
-      borderRight: "1px solid #334155",
-      overflowY: "auto",
-      zIndex: 1000,
-      fontFamily: "Inter, system-ui, sans-serif",
-    }}>
-      <div style={{
-        padding: "10px 12px",
-        fontSize: 11,
-        fontWeight: 600,
-        color: "#94a3b8",
-        textTransform: "uppercase",
-        letterSpacing: "0.05em",
-        borderBottom: "1px solid #334155",
-      }}>
+    <div
+      style={{
+        position: "absolute",
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 200,
+        background: "#151d2e",
+        borderRight: "1px solid #334155",
+        overflowY: "auto",
+        zIndex: 1000,
+        fontFamily: "Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          padding: "10px 12px",
+          fontSize: 11,
+          fontWeight: 600,
+          color: "#94a3b8",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          borderBottom: "1px solid #334155",
+        }}
+      >
         Node Types
       </div>
 
-      {types.length === 0 && (
-        <div style={{ padding: 12, color: "#475569", fontSize: 12, textAlign: "center" }}>
-          Loading templates...
+      {/* ── DATA ─────────────────────────────────────────────────────── */}
+      <SectionHeader
+        label="Data"
+        color={SECTION_COLORS.data}
+        collapsed={!!collapsed.data}
+        onToggle={() => toggleCategory("data")}
+      />
+      {!collapsed.data && (
+        <div style={{ padding: "0 4px 4px" }}>
+          <PaletteItem
+            icon="\uD83D\uDCE6"
+            label="Static JSON"
+            accent={SECTION_COLORS.data}
+            onClick={placeDataNode}
+          />
         </div>
       )}
 
-      {Array.from(categories.entries()).map(([category, items]) => (
-        <div key={category} style={{ borderBottom: "1px solid #1e293b" }}>
-          <div
-            onClick={() => toggleCategory(category)}
-            style={{
-              padding: "6px 12px",
-              fontSize: 10,
-              fontWeight: 600,
-              color: "#64748b",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              cursor: "pointer",
-              userSelect: "none",
-            }}
-          >
-            {collapsed[category] ? "▶" : "▼"} {category}
-          </div>
+      {/* ── TRANSFORM ────────────────────────────────────────────────── */}
+      <SectionHeader
+        label="Transform"
+        color={SECTION_COLORS.transform}
+        collapsed={!!collapsed.transform}
+        onToggle={() => toggleCategory("transform")}
+      />
+      {!collapsed.transform && (
+        <div style={{ padding: "0 4px 4px" }}>
+          <PaletteItem
+            icon="\u26A1"
+            label="Expression"
+            accent={SECTION_COLORS.transform}
+            onClick={placeTransformNode}
+          />
+        </div>
+      )}
 
-          {!collapsed[category] && (
-            <div style={{ padding: "0 4px 4px" }}>
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => handlePlace(item.id)}
-                  style={{
-                    padding: "6px 8px",
-                    margin: "1px 0",
-                    borderRadius: 4,
-                    cursor: "pointer",
-                    fontSize: 12,
-                    color: "#cbd5e1",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1e293b")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                >
-                  <span style={{
-                    width: 16, height: 16, borderRadius: 3,
-                    background: "#334155",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 9, flexShrink: 0,
-                  }}>
-                    {item.name.charAt(0).toUpperCase()}
-                  </span>
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {item.name}
-                  </span>
-                  <span style={{ marginLeft: "auto", fontSize: 10, color: "#475569", flexShrink: 0 }}>
-                    {item.slots.length}
-                  </span>
-                </div>
-              ))}
+      {/* ── VIEWS ────────────────────────────────────────────────────── */}
+      <SectionHeader
+        label="Views"
+        color={SECTION_COLORS.views}
+        collapsed={!!collapsed.views}
+        onToggle={() => toggleCategory("views")}
+      />
+      {!collapsed.views && (
+        <div style={{ padding: "0 4px 4px" }}>
+          {svgTemplates.length === 0 && (
+            <div
+              style={{
+                padding: "4px 8px",
+                color: "#475569",
+                fontSize: 11,
+              }}
+            >
+              Loading templates...
             </div>
           )}
+          {svgTemplates.map((t) => (
+            <PaletteItem
+              key={t.id}
+              label={t.name}
+              sublabel="svg"
+              accent={SECTION_COLORS.views}
+              onClick={() => placeSvgView(t.id)}
+            />
+          ))}
+          {/* HTML views */}
+          {HTML_VIEWS.map((hv) => (
+            <PaletteItem
+              key={hv.id}
+              label={hv.name}
+              sublabel="html"
+              accent="#f59e0b"
+              onClick={() => placeHtmlView(hv)}
+            />
+          ))}
         </div>
-      ))}
+      )}
+    </div>
+  );
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function SectionHeader({
+  label,
+  color,
+  collapsed,
+  onToggle,
+}: {
+  label: string;
+  color: string;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      onClick={onToggle}
+      style={{
+        padding: "6px 12px",
+        fontSize: 10,
+        fontWeight: 600,
+        color: "#64748b",
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        cursor: "pointer",
+        userSelect: "none",
+        borderBottom: "1px solid #1e293b",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: color,
+          flexShrink: 0,
+        }}
+      />
+      {collapsed ? "\u25B6" : "\u25BC"} {label}
+    </div>
+  );
+}
+
+function PaletteItem({
+  icon,
+  label,
+  sublabel,
+  accent,
+  onClick,
+}: {
+  icon?: string;
+  label: string;
+  sublabel?: string;
+  accent: string;
+  onClick: () => void;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        padding: "6px 8px",
+        margin: "1px 0",
+        borderRadius: 4,
+        cursor: "pointer",
+        fontSize: 12,
+        color: "#cbd5e1",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "#1e293b")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      {icon ? (
+        <span style={{ fontSize: 12, flexShrink: 0, width: 16, textAlign: "center" }}>
+          {icon}
+        </span>
+      ) : (
+        <span
+          style={{
+            width: 16,
+            height: 16,
+            borderRadius: 3,
+            background: "#334155",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 9,
+            flexShrink: 0,
+            color: accent,
+            fontWeight: 700,
+          }}
+        >
+          {label.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <span
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </span>
+      {sublabel && (
+        <span
+          style={{
+            marginLeft: "auto",
+            fontSize: 9,
+            color: "#475569",
+            flexShrink: 0,
+            textTransform: "uppercase",
+          }}
+        >
+          {sublabel}
+        </span>
+      )}
     </div>
   );
 }

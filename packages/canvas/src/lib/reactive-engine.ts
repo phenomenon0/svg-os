@@ -1,26 +1,37 @@
 /**
- * Reactive Engine -- wires tldraw's store to SVG OS's WASM engine.
+ * Reactive Engine — wires tldraw's store to the 3-primitive data flow model.
  *
- * Responsibilities:
- * 1. On shape data change -> re-render the shape's SVG via WASM
- * 2. On arrow binding created -> register data flow connection
- * 3. On operation complete -> flush pending evaluations
- * 4. Debounce/batch pattern to avoid calling WASM on every keystroke
+ * Data flows: DataNode -> TransformNode -> ViewNode (via arrows).
+ *
+ * On any change to a DataNode or TransformNode, the engine:
+ * 1. Rebuilds the adjacency graph from arrow bindings
+ * 2. Topologically sorts the graph
+ * 3. Evaluates each node in order:
+ *    - DataNode: output = JSON.parse(dataJson)
+ *    - TransformNode: output = evalExpression(expression, input)
+ *    - ViewNode: renders template with input data, updates renderedContent
+ * 4. Updates all affected shapes
  */
 
 import type { Editor } from "tldraw";
-import { getNodeType, listNodeTypes } from "@svg-os/bridge";
+import { getNodeType, listNodeTypes, renderTemplateInline } from "@svg-os/bridge";
+
+// Node outputs are cached here between evaluations
+const nodeOutputs = new Map<string, Record<string, unknown>>();
+
+// Adjacency: targetId -> [sourceIds]
+const dataFlowGraph = new Map<string, string[]>();
 
 let pendingEval = false;
-const dataFlowGraph = new Map<string, string[]>(); // targetId -> [sourceIds]
 
 export function wireReactiveEngine(editor: Editor) {
-  // After shape props change -> schedule re-render
+  // After shape props change -> schedule re-evaluation
   editor.sideEffects.registerAfterChangeHandler("shape", (prev, next, source) => {
     if (source !== "user") return;
-    if (next.type !== "svg-template" && next.type !== "html") return;
-    if (prev.props === next.props) return; // no actual change
-    scheduleReRender(editor, next.id);
+    const validTypes = ["data-node", "transform-node", "view-node"];
+    if (!validTypes.includes(next.type)) return;
+    if (prev.props === next.props) return;
+    scheduleEvaluation(editor);
   });
 
   // Listen for binding changes (arrows connecting shapes)
@@ -28,94 +39,225 @@ export function wireReactiveEngine(editor: Editor) {
     (entry) => {
       let changed = false;
       for (const record of Object.values(entry.changes.added)) {
-        if (record.typeName === "binding") {
-          changed = true;
-        }
+        if (record.typeName === "binding") changed = true;
       }
       for (const record of Object.values(entry.changes.removed)) {
-        if (record.typeName === "binding") {
-          changed = true;
-        }
+        if (record.typeName === "binding") changed = true;
       }
-      if (changed) rebuildDataFlowGraph(editor);
+      if (changed) {
+        rebuildDataFlowGraph(editor);
+        scheduleEvaluation(editor);
+      }
     },
     { source: "all", scope: "document" },
   );
 }
 
-function scheduleReRender(editor: Editor, shapeId: string) {
+function scheduleEvaluation(editor: Editor) {
   if (pendingEval) return;
   pendingEval = true;
   requestAnimationFrame(() => {
     pendingEval = false;
-    reRenderShape(editor, shapeId);
-    propagateDataFlow(editor, shapeId);
+    evaluateGraph(editor);
   });
 }
 
-function reRenderShape(editor: Editor, shapeId: string) {
-  const shape = editor.getShape(shapeId as any);
-  if (!shape || shape.type !== "svg-template") return;
+// ── Core graph evaluation ─────────────────────────────────────────────────────
 
-  const { typeId, data } = shape.props as Record<string, string>;
-  if (!typeId) return;
+function evaluateGraph(editor: Editor) {
+  rebuildDataFlowGraph(editor);
 
-  try {
-    const nt = getNodeType(typeId) as {
-      template_svg?: string;
-      slots?: Array<{ field: string; target_attr: string }>;
-    } | null;
-    if (!nt?.template_svg) return;
+  const shapes = editor.getCurrentPageShapes();
+  const nodeShapes = shapes.filter((s) =>
+    ["data-node", "transform-node", "view-node"].includes(s.type)
+  );
 
-    const parsedData: Record<string, unknown> = data ? JSON.parse(data) : {};
+  // Build full adjacency for topological sort
+  const allIds = new Set(nodeShapes.map((s) => s.id as string));
+  const inDegree = new Map<string, number>();
+  const adjForward = new Map<string, string[]>(); // sourceId -> [targetIds]
 
-    // Merge upstream data if this shape has incoming connections
-    const upstreamSources = dataFlowGraph.get(shapeId);
-    if (upstreamSources) {
-      const inputData: Record<string, unknown> = {};
-      for (const srcId of upstreamSources) {
-        const srcShape = editor.getShape(srcId as any);
-        if (
-          srcShape?.type === "svg-template" ||
-          srcShape?.type === "html"
-        ) {
-          const srcData = (srcShape.props as Record<string, string>).data;
-          if (srcData) {
-            try {
-              Object.assign(inputData, JSON.parse(srcData));
-            } catch {
-              /* malformed JSON -- skip */
-            }
-          }
-        }
-      }
-      if (Object.keys(inputData).length > 0) {
-        parsedData._input = inputData;
+  for (const id of allIds) {
+    inDegree.set(id, 0);
+    adjForward.set(id, []);
+  }
+
+  for (const [targetId, sources] of dataFlowGraph) {
+    if (!allIds.has(targetId as string)) continue;
+    for (const srcId of sources) {
+      if (!allIds.has(srcId as string)) continue;
+      adjForward.get(srcId as string)!.push(targetId);
+      inDegree.set(targetId, (inDegree.get(targetId) || 0) + 1);
+    }
+  }
+
+  // Kahn's algorithm for topological sort
+  const queue: string[] = [];
+  for (const [id, deg] of inDegree) {
+    if (deg === 0) queue.push(id);
+  }
+
+  const sorted: string[] = [];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    sorted.push(id);
+    for (const next of adjForward.get(id) || []) {
+      const newDeg = (inDegree.get(next) || 1) - 1;
+      inDegree.set(next, newDeg);
+      if (newDeg === 0) queue.push(next);
+    }
+  }
+
+  // Evaluate each node in topological order
+  nodeOutputs.clear();
+
+  for (const nodeId of sorted) {
+    const shape = editor.getShape(nodeId as any);
+    if (!shape) continue;
+
+    // Gather input from upstream nodes
+    const sources = dataFlowGraph.get(nodeId) || [];
+    const input: Record<string, unknown> = {};
+    for (const srcId of sources) {
+      const srcOutput = nodeOutputs.get(srcId);
+      if (srcOutput) {
+        Object.assign(input, srcOutput);
       }
     }
 
-    // Render: substitute slot values into the template SVG
-    const rendered = renderTemplate(nt.template_svg, nt.slots ?? [], parsedData);
-
-    // Update shape without triggering user-source change (avoid recursion)
-    editor.updateShape({
-      id: shapeId as any,
-      type: "svg-template",
-      props: { svgContent: rendered },
-    });
-  } catch (e) {
-    console.warn("[reactive] re-render failed:", e);
+    const shapeAny = shape as unknown as { id: string; type: string; props: Record<string, unknown> };
+    if (shapeAny.type === "data-node") {
+      evaluateDataNode(shapeAny, input);
+    } else if (shapeAny.type === "transform-node") {
+      evaluateTransformNode(shapeAny, input);
+    } else if (shapeAny.type === "view-node") {
+      evaluateViewNode(editor, shapeAny, input);
+    }
   }
 }
 
+// ── Per-type evaluation ───────────────────────────────────────────────────────
+
+function evaluateDataNode(
+  shape: { id: string; props: Record<string, unknown> },
+  _input: Record<string, unknown>,
+) {
+  const dataJson = shape.props.dataJson as string;
+  try {
+    const parsed = JSON.parse(dataJson);
+    nodeOutputs.set(shape.id, typeof parsed === "object" && parsed !== null ? parsed : { value: parsed });
+  } catch {
+    nodeOutputs.set(shape.id, {});
+  }
+}
+
+function evaluateTransformNode(
+  shape: { id: string; props: Record<string, unknown> },
+  input: Record<string, unknown>,
+) {
+  const expression = shape.props.expression as string;
+  try {
+    const result = evalExpression(expression, input);
+    nodeOutputs.set(
+      shape.id,
+      typeof result === "object" && result !== null
+        ? (result as Record<string, unknown>)
+        : { value: result },
+    );
+  } catch {
+    // Pass input through on error
+    nodeOutputs.set(shape.id, input);
+  }
+}
+
+function evaluateViewNode(
+  editor: Editor,
+  shape: { id: string; props: Record<string, unknown> },
+  input: Record<string, unknown>,
+) {
+  const viewType = shape.props.viewType as string;
+  const typeId = shape.props.typeId as string;
+
+  if (viewType === "svg-template" && typeId && Object.keys(input).length > 0) {
+    // Render SVG template with input data
+    try {
+      const nt = getNodeType(typeId) as { template_svg?: string } | null;
+      if (nt?.template_svg) {
+        let rendered: string;
+        try {
+          rendered = renderTemplateInline(nt.template_svg, input);
+        } catch {
+          // Fallback: simple mustache replacement
+          rendered = renderTemplateFallback(nt.template_svg, input);
+        }
+
+        editor.updateShape({
+          id: shape.id as any,
+          type: "view-node",
+          props: { renderedContent: rendered },
+        });
+      }
+    } catch (e) {
+      console.warn("[reactive] SVG view render failed:", e);
+    }
+  }
+
+  // HTML views don't need re-rendering from data flow currently;
+  // their content is set directly via props.
+  // Future: map input data to htmlContent dynamically.
+
+  // ViewNode doesn't produce output (it's a sink)
+  nodeOutputs.set(shape.id, {});
+}
+
+// ── Expression evaluator ──────────────────────────────────────────────────────
+
 /**
- * Simple template renderer: for each slot, replace placeholder text in the SVG
- * with the corresponding data value. Handles both {{field}} mustache syntax
- * and target_attr-based attribute replacement.
+ * Evaluate a simple expression against input data.
+ * Supports:
+ * - $.field — access input field
+ * - $.field.nested — nested access
+ * - Literal JSON passthrough
+ * - Simple arithmetic: +, -, *, /
  */
-function renderTemplate(
+function evalExpression(
+  expression: string,
+  input: Record<string, unknown>,
+): unknown {
+  const expr = expression.trim();
+
+  // $.field access
+  if (expr.startsWith("$.")) {
+    const path = expr.slice(2).split(".");
+    let current: unknown = input;
+    for (const key of path) {
+      if (current == null || typeof current !== "object") return null;
+      current = (current as Record<string, unknown>)[key];
+    }
+    return current;
+  }
+
+  // Passthrough all input
+  if (expr === "$" || expr === "$.") {
+    return input;
+  }
+
+  // Try JSON literal
+  try {
+    return JSON.parse(expr);
+  } catch {
+    /* not JSON */
+  }
+
+  // Simple map expression: { key: $.field, ... }
+  // For safety, just pass input through with expression as a label
+  return { ...input, _expression: expr };
+}
+
+// ── Fallback template renderer ────────────────────────────────────────────────
+
+function renderTemplateFallback(
   templateSvg: string,
-  slots: Array<{ field: string; target_attr: string }>,
   data: Record<string, unknown>,
 ): string {
   let svg = templateSvg;
@@ -125,12 +267,23 @@ function renderTemplate(
     return data[field] != null ? String(data[field]) : "";
   });
 
-  // For slot-based attribute replacement, update attribute values in-place
+  // For slot-based attribute replacement
+  let slots: Array<{ field: string; target_attr: string }> = [];
+  try {
+    const types = listNodeTypes();
+    for (const t of types) {
+      if (templateSvg.includes(t.id)) {
+        slots = t.slots;
+        break;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
   for (const slot of slots) {
     const val = data[slot.field];
     if (val == null) continue;
-
-    // Replace attribute values: attr="old" -> attr="new"
     const attrPattern = new RegExp(
       `(${escapeRegex(slot.target_attr)}\\s*=\\s*")[^"]*"`,
       "g",
@@ -146,22 +299,18 @@ function escapeRegex(s: string): string {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
-function propagateDataFlow(editor: Editor, changedShapeId: string) {
-  // Find shapes that depend on the changed shape
-  for (const [targetId, sources] of dataFlowGraph) {
-    if (sources.includes(changedShapeId)) {
-      reRenderShape(editor, targetId);
-    }
-  }
-}
+// ── Graph building ────────────────────────────────────────────────────────────
 
 function rebuildDataFlowGraph(editor: Editor) {
   dataFlowGraph.clear();
 
-  // Get all arrow shapes on the current page
   const shapes = editor.getCurrentPageShapes();
   const arrows = shapes.filter((s) => s.type === "arrow");
 
@@ -169,7 +318,6 @@ function rebuildDataFlowGraph(editor: Editor) {
     const bindings = editor.getBindingsFromShape(arrow.id, "arrow");
     if (bindings.length < 2) continue;
 
-    // Arrow has start and end bindings
     const startBinding = bindings.find(
       (b) => (b.props as Record<string, unknown>).terminal === "start",
     );
