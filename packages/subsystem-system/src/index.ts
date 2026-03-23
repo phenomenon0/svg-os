@@ -11,6 +11,12 @@
 import type { Subsystem, NodeDef, ExecContext, NodeId } from "@svg-os/core";
 import { executeNotebook, executeTerminal } from "./execution";
 
+const NOTEBOOK_CELL_OUTPUTS = Array.from({ length: 16 }, (_, index) => ({
+  name: `cell:${index}`,
+  type: "data" as const,
+  optional: true,
+}));
+
 // ── File Open Node ───────────────────────────────────────────────────────────
 // Opens a real file from the user's filesystem via File System Access API.
 // The file handle is stored in config; content is read on each execution.
@@ -297,6 +303,7 @@ const notebookNodeDef: NodeDef = {
   outputs: [
     { name: "all", type: "data" },
     { name: "cells", type: "text" },
+    ...NOTEBOOK_CELL_OUTPUTS,
   ],
   capabilities: [{ subsystem: "system", action: "execute" }],
   execution: { mode: "exclusive", concurrencyKey: "system:notebook" },

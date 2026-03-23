@@ -965,9 +965,14 @@ export function CollabOverlay() {
     client.onLeave = (user) => addToast(`${user.name} left`, user.color);
 
     client.onOperation = (type, payload) => {
+      // Skip updates for shapes the local user is currently editing
+      const selectedIds = new Set(editor.getSelectedShapeIds().map(String));
+
       if (type === "create" && payload.shape) {
         try { editor.createShape(payload.shape); } catch { /* shape might already exist */ }
       } else if (type === "update" && payload.id && payload.props) {
+        // Don't apply remote updates to shapes we're actively editing
+        if (selectedIds.has(String(payload.id))) return;
         try { editor.updateShape({ id: payload.id, type: payload.type, props: payload.props }); } catch { /* */ }
       } else if (type === "delete" && payload.id) {
         try { editor.deleteShape(payload.id as any); } catch { /* */ }
