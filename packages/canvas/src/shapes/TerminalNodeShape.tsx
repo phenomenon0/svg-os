@@ -232,8 +232,8 @@ function TerminalComponent({ shape }: { shape: TerminalNodeShape }) {
           />
         </div>
 
-        <Port side="left" color="#22c55e" shapeId={shape.id} />
-        <Port side="right" color="#22c55e" shapeId={shape.id} />
+        <Port side="left" type="data" name="input" shapeId={shape.id} />
+        <Port side="right" type="data" name="result" shapeId={shape.id} />
       </div>
     </HTMLContainer>
   );

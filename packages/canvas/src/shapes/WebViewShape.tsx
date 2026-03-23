@@ -77,7 +77,7 @@ export class WebViewShapeUtil extends ShapeUtil<WebViewShape> {
           borderRadius: 8,
         }}
       >
-        <Port side="left" color="#06b6d4" shapeId={shape.id} />
+        <Port side="left" type="text" name="url" shapeId={shape.id} />
         <WebViewContent w={w} h={h} url={url} shapeId={shape.id} />
       </HTMLContainer>
     );

@@ -30,7 +30,7 @@ export function wireReactiveEngine(editor: Editor) {
   // After shape props change -> schedule re-evaluation
   editor.sideEffects.registerAfterChangeHandler("shape", (prev, next, source) => {
     if (isEvaluating) return;
-    const validTypes = ["data-node", "table-node", "transform-node", "terminal-node", "view-node", "multiplexer-node"];
+    const validTypes = ["data-node", "table-node", "transform-node", "terminal-node", "view-node", "note-node", "notebook-node", "ai-node"];
     if (!validTypes.includes(next.type)) return;
     if (prev.props === next.props) return;
     scheduleEvaluation(editor);
@@ -74,7 +74,7 @@ function evaluateGraph(editor: Editor) {
   try {
   const shapes = editor.getCurrentPageShapes();
   const nodeShapes = shapes.filter((s) =>
-    ["data-node", "table-node", "transform-node", "terminal-node", "view-node", "multiplexer-node"].includes(s.type)
+    ["data-node", "table-node", "transform-node", "terminal-node", "view-node", "note-node", "notebook-node", "ai-node"].includes(s.type)
   );
 
   // Build full adjacency for topological sort
@@ -141,8 +141,12 @@ function evaluateGraph(editor: Editor) {
       evaluateTerminalNode(editor, shapeAny, input);
     } else if (shapeAny.type === "view-node") {
       evaluateViewNode(editor, shapeAny, input);
-    } else if (shapeAny.type === "multiplexer-node") {
-      evaluateMultiplexerNode(editor, shapeAny, input);
+    } else if (shapeAny.type === "note-node") {
+      evaluateNoteNode(shapeAny, input);
+    } else if (shapeAny.type === "notebook-node") {
+      evaluateNotebookNode(shapeAny, input);
+    } else if (shapeAny.type === "ai-node") {
+      evaluateAINode(editor, shapeAny, input);
     }
   }
   } finally {
@@ -275,25 +279,95 @@ function evaluateViewNode(
   nodeOutputs.set(shape.id, {});
 }
 
-function evaluateMultiplexerNode(
+function evaluateNoteNode(
+  shape: { id: string; props: Record<string, unknown> },
+  input: Record<string, unknown>,
+) {
+  let content = (shape.props.content as string) || "";
+  // Interpolate {{field}} placeholders from upstream
+  if (Object.keys(input).length > 0) {
+    content = content.replace(/\{\{(\w+)\}\}/g, (_m, field) => {
+      return input[field] != null ? String(input[field]) : "";
+    });
+  }
+  nodeOutputs.set(shape.id, { content });
+}
+
+function evaluateNotebookNode(
+  shape: { id: string; props: Record<string, unknown> },
+  input: Record<string, unknown>,
+) {
+  // Output the last code cell's result
+  try {
+    const cells = JSON.parse((shape.props.cells as string) || "[]") as Array<{
+      type: string;
+      output?: string;
+    }>;
+    const lastCode = [...cells].reverse().find((c) => c.type === "code");
+    if (lastCode?.output) {
+      const parsed = JSON.parse(lastCode.output);
+      nodeOutputs.set(
+        shape.id,
+        typeof parsed === "object" && parsed !== null ? parsed : { value: parsed },
+      );
+      return;
+    }
+  } catch {
+    /* */
+  }
+  nodeOutputs.set(shape.id, input);
+}
+
+// Track last AI call to prevent duplicate requests
+const aiCallHashes = new Map<string, string>();
+
+function evaluateAINode(
   editor: Editor,
   shape: { id: string; props: Record<string, unknown> },
   input: Record<string, unknown>,
 ) {
-  // Feed the input array to the multiplexer's inputDataJson prop
-  const rows = (input._rows as unknown[]) || [];
-  if (rows.length > 0) {
-    const newInputDataJson = JSON.stringify(rows);
-    const currentInputDataJson = shape.props.inputDataJson as string;
-    if (newInputDataJson !== currentInputDataJson) {
-      editor.updateShape({
-        id: shape.id as any,
-        type: "multiplexer-node",
-        props: { inputDataJson: newInputDataJson },
-      });
-    }
+  const prompt = (shape.props.prompt as string) || "";
+  const status = shape.props.status as string;
+
+  // Interpolate prompt with upstream data
+  let resolvedPrompt = prompt;
+  if (Object.keys(input).length > 0) {
+    resolvedPrompt = prompt.replace(/\{\{(\w+)\}\}/g, (_m, field) => {
+      return input[field] != null ? String(input[field]) : "";
+    });
   }
-  nodeOutputs.set(shape.id, {});
+
+  // Hash to detect changes
+  const hash = resolvedPrompt + JSON.stringify(input);
+  const lastHash = aiCallHashes.get(shape.id);
+
+  if (hash !== lastHash && status !== "loading" && resolvedPrompt.trim()) {
+    aiCallHashes.set(shape.id, hash);
+    // Fire async API call
+    editor.updateShape({
+      id: shape.id as any,
+      type: "ai-node",
+      props: { status: "loading", errorMessage: "" },
+    });
+
+    import("./claude-api").then(({ callClaude }) => {
+      callClaude(resolvedPrompt, input).then(({ text, error }) => {
+        editor.updateShape({
+          id: shape.id as any,
+          type: "ai-node",
+          props: {
+            response: text || "",
+            status: error ? "error" : "done",
+            errorMessage: error || "",
+          },
+        });
+      });
+    });
+  }
+
+  // Output current response
+  const response = (shape.props.response as string) || "";
+  nodeOutputs.set(shape.id, { response, prompt: resolvedPrompt });
 }
 
 // ── Fallback template renderer ────────────────────────────────────────────────

@@ -18,17 +18,10 @@ export function isWasmReady(): boolean {
 }
 
 const BUILTIN_TEMPLATES = [
-  { id: "scouting-report", name: "Scouting Report", category: "cards", file: "scouting-report.svg" },
-  { id: "match-card", name: "Match Card", category: "cards", file: "match-card.svg" },
-  { id: "team-card", name: "Team Card", category: "cards", file: "team-card.svg" },
+  { id: "hero-card", name: "Hero Card", category: "cards", file: "hero-card.svg" },
   { id: "profile-hud", name: "Profile HUD", category: "cards", file: "profile-hud.svg" },
-  { id: "game-achievement", name: "Achievement", category: "cards", file: "game-achievement.svg" },
-  { id: "portfolio-card", name: "Portfolio Card", category: "cards", file: "portfolio-card.svg" },
   { id: "pricing-card", name: "Pricing Card", category: "cards", file: "pricing-card.svg" },
   { id: "team-member-card", name: "Team Member", category: "cards", file: "team-member-card.svg" },
-  { id: "brand-showcase", name: "Brand Showcase", category: "display", file: "brand-showcase.svg" },
-  { id: "event-flyer", name: "Event Flyer", category: "display", file: "event-flyer.svg" },
-  { id: "hero-card", name: "Hero Card", category: "display", file: "hero-card.svg" },
   { id: "shader-card", name: "Shader Card", category: "display", file: "shader-card.svg" },
   { id: "shader-poster", name: "Shader Poster", category: "display", file: "shader-poster.svg" },
 ];

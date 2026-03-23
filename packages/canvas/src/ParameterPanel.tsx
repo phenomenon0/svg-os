@@ -9,13 +9,15 @@ import type { DataNodeShape } from "./shapes/DataNodeShape";
 import type { TransformNodeShape } from "./shapes/TransformNodeShape";
 import type { ViewNodeShape } from "./shapes/ViewNodeShape";
 import type { TableNodeShape } from "./shapes/TableNodeShape";
-import type { MultiplexerNodeShape } from "./shapes/MultiplexerNodeShape";
 import type { WebViewShape } from "./shapes/WebViewShape";
 import type { TerminalNodeShape } from "./shapes/TerminalNodeShape";
+import type { NoteNodeShape } from "./shapes/NoteNodeShape";
+import type { NotebookNodeShape } from "./shapes/NotebookNodeShape";
+import type { AINodeShape } from "./shapes/AINodeShape";
 
-type AnyNodeShape = DataNodeShape | TransformNodeShape | ViewNodeShape | TableNodeShape | MultiplexerNodeShape | WebViewShape | TerminalNodeShape;
+type AnyNodeShape = DataNodeShape | TransformNodeShape | ViewNodeShape | TableNodeShape | WebViewShape | TerminalNodeShape | NoteNodeShape | NotebookNodeShape | AINodeShape;
 
-const NODE_TYPES = ["data-node", "transform-node", "view-node", "table-node", "multiplexer-node", "web-view", "terminal-node"] as const;
+const NODE_TYPES = ["data-node", "transform-node", "view-node", "table-node", "web-view", "terminal-node", "note-node", "notebook-node", "ai-node"] as const;
 
 export function ParameterPanel() {
   const editor = useEditor();
@@ -81,9 +83,6 @@ export function ParameterPanel() {
       )}
       {selectedShape.type === "table-node" && (
         <TableNodeParams shape={selectedShape as TableNodeShape} editor={editor} />
-      )}
-      {selectedShape.type === "multiplexer-node" && (
-        <MultiplexerNodeParams shape={selectedShape as MultiplexerNodeShape} editor={editor} />
       )}
       {selectedShape.type === "web-view" && (
         <WebViewParams shape={selectedShape as WebViewShape} editor={editor} />
@@ -402,43 +401,6 @@ function TableNodeParams({ shape, editor }: { shape: TableNodeShape; editor: Ret
             fontFamily: "'JetBrains Mono', monospace", resize: "vertical", lineHeight: 1.4,
           }}
         />
-      </ParamGroup>
-    </div>
-  );
-}
-
-// ── MultiplexerNode Panel ───────────────────────────────────────────────────
-
-function MultiplexerNodeParams({ shape, editor }: { shape: MultiplexerNodeShape; editor: ReturnType<typeof useEditor> }) {
-  const { label, templateId, maxItems } = shape.props;
-
-  let templates: Array<{ id: string; name: string }> = [];
-  try { templates = listNodeTypes().map(t => ({ id: t.id, name: t.name })); } catch { /* */ }
-
-  const updateProp = (key: string, value: unknown) => {
-    editor.updateShape({ id: shape.id, type: "multiplexer-node", props: { [key]: value } });
-  };
-
-  return (
-    <div style={{ padding: 12 }}>
-      <ParamGroup label="Multiplexer">
-        <ParamRow label="Label" value={label} onChange={(v) => updateProp("label", v)} />
-        <ParamRow label="Max" value={String(maxItems)} onChange={(v) => updateProp("maxItems", parseInt(v) || 5)} />
-      </ParamGroup>
-      <ParamGroup label="Template">
-        <div style={{ fontSize: 10, color: "#64748b", marginBottom: 4 }}>Select template for rendering</div>
-        <select
-          value={templateId}
-          onChange={(e) => updateProp("templateId", e.target.value)}
-          style={{
-            width: "100%", padding: "4px 6px",
-            background: "#0f172a", border: "1px solid #334155",
-            borderRadius: 4, color: "#e2e8f0", fontSize: 11,
-          }}
-        >
-          <option value="">-- none --</option>
-          {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
       </ParamGroup>
     </div>
   );

@@ -9,11 +9,14 @@ import { DataNodeShapeUtil } from "./shapes/DataNodeShape";
 import { TransformNodeShapeUtil } from "./shapes/TransformNodeShape";
 import { ViewNodeShapeUtil } from "./shapes/ViewNodeShape";
 import { TableNodeShapeUtil } from "./shapes/TableNodeShape";
-import { MultiplexerNodeShapeUtil } from "./shapes/MultiplexerNodeShape";
 import { WebViewShapeUtil } from "./shapes/WebViewShape";
 import { TerminalNodeShapeUtil } from "./shapes/TerminalNodeShape";
+import { NoteNodeShapeUtil } from "./shapes/NoteNodeShape";
+import { NotebookNodeShapeUtil } from "./shapes/NotebookNodeShape";
+import { AINodeShapeUtil } from "./shapes/AINodeShape";
 import { NodePalette } from "./NodePalette";
 import { ParameterPanel } from "./ParameterPanel";
+import { AIChat } from "./AIChat";
 import { initWasm } from "./lib/wasm-bridge";
 import { wireReactiveEngine } from "./lib/reactive-engine";
 import { useEffect, useState } from "react";
@@ -23,9 +26,11 @@ const customShapeUtils = [
   TransformNodeShapeUtil,
   ViewNodeShapeUtil,
   TableNodeShapeUtil,
-  MultiplexerNodeShapeUtil,
   WebViewShapeUtil,
   TerminalNodeShapeUtil,
+  NoteNodeShapeUtil,
+  NotebookNodeShapeUtil,
+  AINodeShapeUtil,
 ];
 
 // Stable component reference to avoid remounting
@@ -34,6 +39,7 @@ function CanvasOverlays() {
     <>
       <NodePalette />
       <ParameterPanel />
+      <AIChat />
     </>
   );
 }
