@@ -158,7 +158,7 @@ function WebViewContent({
 
   // Route through CORS proxy to bypass X-Frame-Options
   const iframeSrc = activeUrl === "about:blank" ? activeUrl
-    : useProxy ? `https://corsproxy.io/?url=${encodeURIComponent(activeUrl)}`
+    : useProxy ? `https://api.allorigins.win/raw?url=${encodeURIComponent(activeUrl)}`
     : activeUrl;
 
   const urlBarHeight = 32;
