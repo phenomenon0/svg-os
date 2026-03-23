@@ -52,6 +52,8 @@ importers:
         specifier: ^2.2.0
         version: 2.3.2(vite@6.4.1)
 
+  packages/core: {}
+
   packages/demo:
     dependencies:
       '@svg-os/bridge':
@@ -114,6 +116,24 @@ importers:
       vite-plugin-static-copy:
         specifier: ^3.3.0
         version: 3.3.0(vite@6.4.1)
+
+  packages/subsystem-data:
+    dependencies:
+      '@svg-os/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/subsystem-system:
+    dependencies:
+      '@svg-os/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/subsystem-view:
+    dependencies:
+      '@svg-os/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 
