@@ -87,7 +87,7 @@ async function runViaWasi(
     return {
       output: [],
       result: undefined,
-      error: `${getLangLabel(lang)} requires SharedArrayBuffer (COOP/COEP headers). Use JavaScript mode instead, or run locally with proper headers.`,
+      error: `${getLangLabel(lang)} is loading — reload the page if this persists.`,
     };
   }
 
