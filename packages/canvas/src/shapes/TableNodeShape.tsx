@@ -92,6 +92,18 @@ function TableComponent({ shape }: { shape: TableNodeShape }) {
     update(updated);
   }, [rows, update]);
 
+  const renameColumn = useCallback((oldName: string, newName: string) => {
+    if (!newName.trim() || newName === oldName) return;
+    if (columns.includes(newName)) return; // prevent duplicate
+    update(rows.map(r => {
+      const n: Record<string, string> = {};
+      for (const [k, v] of Object.entries(r)) {
+        n[k === oldName ? newName : k] = v;
+      }
+      return n;
+    }));
+  }, [rows, columns, update]);
+
   const cellW = columns.length > 0 ? Math.max(60, (w - 30) / columns.length) : 100;
 
   return (
@@ -137,7 +149,11 @@ function TableComponent({ shape }: { shape: TableNodeShape }) {
                   <th style={{ ...thStyle, width: 24, color: C.dim }}>#</th>
                   {columns.map(col => (
                     <th key={col} style={{ ...thStyle, width: cellW, position: "relative" }}>
-                      <span style={{ color: C.muted }}>{col}</span>
+                      <CellInput
+                        value={col}
+                        onChange={v => renameColumn(col, v)}
+                        style={{ fontWeight: 500, color: C.accent }}
+                      />
                       <span
                         onClick={e => { e.stopPropagation(); deleteColumn(col); }}
                         onPointerDown={e => e.stopPropagation()}
@@ -200,7 +216,7 @@ function TableComponent({ shape }: { shape: TableNodeShape }) {
 
 // ── Cell Input ───────────────────────────────────────────────────────────────
 
-function CellInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function CellInput({ value, onChange, style: extraStyle }: { value: string; onChange: (v: string) => void; style?: React.CSSProperties }) {
   const [local, setLocal] = useState(value);
   const cleanupRef = useRef<(() => void) | null>(null);
 
@@ -224,6 +240,7 @@ function CellInput({ value, onChange }: { value: string; onChange: (v: string) =
         background: "transparent", border: "none",
         color: C.fg, fontSize: 11, fontFamily: FONT.mono,
         outline: "none",
+        ...extraStyle,
       }}
     />
   );

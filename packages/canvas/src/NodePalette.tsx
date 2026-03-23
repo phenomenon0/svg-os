@@ -201,6 +201,7 @@ export function NodePalette() {
   const runtime = useRuntime();
   const [search, setSearch] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [gridPickerOpen, setGridPickerOpen] = useState(false);
   const [recentlyUsed, setRecentlyUsed] = useState<string[]>([]);
 
   // Section collapse state
@@ -531,9 +532,34 @@ export function NodePalette() {
 
           {/* Core primitives — always visible */}
           <SectionHeader text="Primitives" />
+          {renderItem("view:note", "Note", C.accent, () => placeNode("view:note"))}
+          <div style={{ position: "relative" }}>
+            {renderItem("data:table", "Table", C.blue, () => setGridPickerOpen(!gridPickerOpen))}
+            {gridPickerOpen && (
+              <GridPicker onSelect={(cols, rows) => {
+                setGridPickerOpen(false);
+                const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                const colNames = Array.from({ length: cols }, (_, i) => letters[i] || `col${i + 1}`);
+                const emptyRows = Array.from({ length: rows }, () => {
+                  const r: Record<string, string> = {};
+                  colNames.forEach(c => r[c] = "");
+                  return r;
+                });
+                const o = offset();
+                const center = editor.getViewportScreenCenter();
+                const w = Math.max(200, cols * 80 + 50);
+                const h = Math.max(120, rows * 28 + 60);
+                editor.createShape({
+                  type: "table-node",
+                  x: center.x - w / 2 + o.x,
+                  y: center.y - h / 2 + o.y,
+                  props: { w, h, label: "Table", dataJson: JSON.stringify(emptyRows), selectedRow: -1, outputMode: "all" },
+                });
+                trackRecent("data:table");
+              }} onClose={() => setGridPickerOpen(false)} />
+            )}
+          </div>
           {[
-            { type: "view:note", label: "Note", color: C.accent },
-            { type: "data:table", label: "Table", color: C.blue },
             { type: "sys:terminal", label: "Terminal", color: C.green },
             { type: "data:json", label: "Data", color: C.green },
             { type: "sys:notebook", label: "Notebook", color: C.purple },
@@ -652,6 +678,73 @@ function CollapsibleHeader({
 }
 
 // ── Settings Modal ────────────────────────────────────────────────────────────
+
+// ── Grid Picker (table dimension selector) ───────────────────────────────────
+
+function GridPicker({ onSelect, onClose }: {
+  onSelect: (cols: number, rows: number) => void;
+  onClose: () => void;
+}) {
+  const [hoverCol, setHoverCol] = useState(0);
+  const [hoverRow, setHoverRow] = useState(0);
+  const maxCols = 6;
+  const maxRows = 6;
+  const cellSize = 18;
+  const gap = 2;
+
+  return (
+    <div style={{
+      position: "absolute", left: "100%", top: 0, marginLeft: 4,
+      background: C.bgCard, border: `1px solid ${C.border}`,
+      borderRadius: 8, padding: 10, zIndex: 100,
+      boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+      pointerEvents: "all",
+    }}
+      onPointerDown={e => e.stopPropagation()}
+    >
+      <div style={{
+        fontFamily: FONT.mono, fontSize: 10, color: C.accent,
+        textAlign: "center", marginBottom: 6, letterSpacing: "0.05em",
+      }}>
+        {hoverCol > 0 ? `${hoverCol} × ${hoverRow}` : "Pick size"}
+      </div>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${maxCols}, ${cellSize}px)`,
+        gap,
+      }}>
+        {Array.from({ length: maxRows * maxCols }, (_, i) => {
+          const col = (i % maxCols) + 1;
+          const row = Math.floor(i / maxCols) + 1;
+          const active = col <= hoverCol && row <= hoverRow;
+          return (
+            <div key={i}
+              onMouseEnter={() => { setHoverCol(col); setHoverRow(row); }}
+              onClick={e => { e.stopPropagation(); onSelect(col, row); }}
+              style={{
+                width: cellSize, height: cellSize,
+                borderRadius: 2,
+                background: active ? C.blue : C.bgDeep,
+                border: `1px solid ${active ? C.blue + "88" : C.border}`,
+                cursor: "pointer",
+                transition: "background 0.08s",
+              }}
+            />
+          );
+        })}
+      </div>
+      <div style={{
+        marginTop: 6, textAlign: "center",
+        fontSize: 9, color: C.dim,
+      }}>
+        <span onClick={e => { e.stopPropagation(); onClose(); }}
+          style={{ cursor: "pointer", color: C.faint }}>cancel</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Settings Modal ───────────────────────────────────────────────────────────
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const [apiKey, setApiKeyLocal] = useState(getApiKey());
