@@ -10,6 +10,7 @@ import { TransformNodeShapeUtil } from "./shapes/TransformNodeShape";
 import { ViewNodeShapeUtil } from "./shapes/ViewNodeShape";
 import { TableNodeShapeUtil } from "./shapes/TableNodeShape";
 import { MultiplexerNodeShapeUtil } from "./shapes/MultiplexerNodeShape";
+import { WebViewShapeUtil } from "./shapes/WebViewShape";
 import { NodePalette } from "./NodePalette";
 import { ParameterPanel } from "./ParameterPanel";
 import { initWasm } from "./lib/wasm-bridge";
@@ -22,6 +23,7 @@ const customShapeUtils = [
   ViewNodeShapeUtil,
   TableNodeShapeUtil,
   MultiplexerNodeShapeUtil,
+  WebViewShapeUtil,
 ];
 
 // Stable component reference to avoid remounting

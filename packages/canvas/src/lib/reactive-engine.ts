@@ -23,11 +23,12 @@ const nodeOutputs = new Map<string, Record<string, unknown>>();
 const dataFlowGraph = new Map<string, string[]>();
 
 let pendingEval = false;
+let isEvaluating = false;
 
 export function wireReactiveEngine(editor: Editor) {
   // After shape props change -> schedule re-evaluation
   editor.sideEffects.registerAfterChangeHandler("shape", (prev, next, source) => {
-    if (source !== "user") return;
+    if (isEvaluating) return;
     const validTypes = ["data-node", "table-node", "transform-node", "view-node", "multiplexer-node"];
     if (!validTypes.includes(next.type)) return;
     if (prev.props === next.props) return;
@@ -51,6 +52,9 @@ export function wireReactiveEngine(editor: Editor) {
     },
     { source: "all", scope: "document" },
   );
+
+  // Initial graph build
+  rebuildDataFlowGraph(editor);
 }
 
 function scheduleEvaluation(editor: Editor) {
@@ -65,11 +69,11 @@ function scheduleEvaluation(editor: Editor) {
 // ── Core graph evaluation ─────────────────────────────────────────────────────
 
 function evaluateGraph(editor: Editor) {
-  rebuildDataFlowGraph(editor);
-
+  isEvaluating = true;
+  try {
   const shapes = editor.getCurrentPageShapes();
   const nodeShapes = shapes.filter((s) =>
-    ["data-node", "transform-node", "view-node"].includes(s.type)
+    ["data-node", "table-node", "transform-node", "view-node", "multiplexer-node"].includes(s.type)
   );
 
   // Build full adjacency for topological sort
@@ -137,6 +141,9 @@ function evaluateGraph(editor: Editor) {
     } else if (shapeAny.type === "multiplexer-node") {
       evaluateMultiplexerNode(editor, shapeAny, input);
     }
+  }
+  } finally {
+    isEvaluating = false;
   }
 }
 
@@ -229,11 +236,14 @@ function evaluateViewNode(
           rendered = renderTemplateFallback(nt.template_svg, mergedInput);
         }
 
-        editor.updateShape({
-          id: shape.id as any,
-          type: "view-node",
-          props: { renderedContent: rendered },
-        });
+        const currentRendered = shape.props.renderedContent as string;
+        if (rendered !== currentRendered) {
+          editor.updateShape({
+            id: shape.id as any,
+            type: "view-node",
+            props: { renderedContent: rendered },
+          });
+        }
       }
     } catch (e) {
       console.warn("[reactive] SVG view render failed:", e);
@@ -256,11 +266,15 @@ function evaluateMultiplexerNode(
   // Feed the input array to the multiplexer's inputDataJson prop
   const rows = (input._rows as unknown[]) || [];
   if (rows.length > 0) {
-    editor.updateShape({
-      id: shape.id as any,
-      type: "multiplexer-node",
-      props: { inputDataJson: JSON.stringify(rows) },
-    });
+    const newInputDataJson = JSON.stringify(rows);
+    const currentInputDataJson = shape.props.inputDataJson as string;
+    if (newInputDataJson !== currentInputDataJson) {
+      editor.updateShape({
+        id: shape.id as any,
+        type: "multiplexer-node",
+        props: { inputDataJson: newInputDataJson },
+      });
+    }
   }
   nodeOutputs.set(shape.id, {});
 }

@@ -73,6 +73,7 @@ const SECTION_COLORS: Record<string, string> = {
   data: "#22c55e",
   transform: "#8b5cf6",
   views: "#06b6d4",
+  web: "#f97316",
 };
 
 export function NodePalette() {
@@ -151,7 +152,6 @@ export function NodePalette() {
         label: "Table",
         dataJson: "[]",
         selectedRow: -1,
-        filterExpr: "",
         outputMode: "all",
       },
     });
@@ -239,6 +239,22 @@ export function NodePalette() {
     },
     [editor]
   );
+
+  const placeWebView = useCallback(() => {
+    const o = offset();
+    const center = editor.getViewportScreenCenter();
+    editor.createShape({
+      type: "web-view",
+      x: center.x - 240 + o.x,
+      y: center.y - 180 + o.y,
+      props: {
+        w: 480,
+        h: 360,
+        url: "https://example.com",
+        label: "WebView",
+      },
+    });
+  }, [editor]);
 
   const toggleCategory = (cat: string) => {
     setCollapsed((prev) => ({ ...prev, [cat]: !prev[cat] }));
@@ -365,6 +381,25 @@ export function NodePalette() {
               onClick={() => placeHtmlView(hv)}
             />
           ))}
+        </div>
+      )}
+
+      {/* ── WEB ──────────────────────────────────────────────────────── */}
+      <SectionHeader
+        label="Web"
+        color={SECTION_COLORS.web}
+        collapsed={!!collapsed.web}
+        onToggle={() => toggleCategory("web")}
+      />
+      {!collapsed.web && (
+        <div style={{ padding: "0 4px 4px" }}>
+          <PaletteItem
+            icon={"\uD83C\uDF10"}
+            label="WebView"
+            sublabel="iframe"
+            accent={SECTION_COLORS.web}
+            onClick={placeWebView}
+          />
         </div>
       )}
     </div>

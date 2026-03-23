@@ -29,7 +29,6 @@ export type TableNodeShape = TLBaseShape<
     label: string;
     dataJson: string;
     selectedRow: number;
-    filterExpr: string;
     outputMode: string;
   }
 >;
@@ -43,7 +42,6 @@ export class TableNodeShapeUtil extends ShapeUtil<TableNodeShape> {
     label: T.string,
     dataJson: T.string,
     selectedRow: T.number,
-    filterExpr: T.string,
     outputMode: T.string,
   };
 
@@ -54,7 +52,6 @@ export class TableNodeShapeUtil extends ShapeUtil<TableNodeShape> {
       label: "Data",
       dataJson: "[]",
       selectedRow: -1,
-      filterExpr: "",
       outputMode: "all",
     };
   }
@@ -186,12 +183,18 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
                 const slotFields = nt.slots.map((s: any) => s.field);
                 const newCols = slotFields.filter((f: string) => !columns.includes(f));
                 if (newCols.length > 0) {
-                  const newRows = rows.map(row => {
-                    const updated = { ...row };
-                    newCols.forEach((c: string) => { updated[c] = ""; });
-                    return updated;
-                  });
-                  updateData(newRows);
+                  if (rows.length === 0) {
+                    const emptyRow: Record<string, unknown> = {};
+                    [...columns, ...newCols].forEach(c => emptyRow[c] = "");
+                    updateData([emptyRow]);
+                  } else {
+                    const newRows = rows.map(row => {
+                      const updated = { ...row };
+                      newCols.forEach((c: string) => { updated[c] = ""; });
+                      return updated;
+                    });
+                    updateData(newRows);
+                  }
                 }
               }
             } catch { /* */ }

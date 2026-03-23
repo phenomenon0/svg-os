@@ -10,10 +10,11 @@ import type { TransformNodeShape } from "./shapes/TransformNodeShape";
 import type { ViewNodeShape } from "./shapes/ViewNodeShape";
 import type { TableNodeShape } from "./shapes/TableNodeShape";
 import type { MultiplexerNodeShape } from "./shapes/MultiplexerNodeShape";
+import type { WebViewShape } from "./shapes/WebViewShape";
 
-type AnyNodeShape = DataNodeShape | TransformNodeShape | ViewNodeShape | TableNodeShape | MultiplexerNodeShape;
+type AnyNodeShape = DataNodeShape | TransformNodeShape | ViewNodeShape | TableNodeShape | MultiplexerNodeShape | WebViewShape;
 
-const NODE_TYPES = ["data-node", "transform-node", "view-node", "table-node", "multiplexer-node"] as const;
+const NODE_TYPES = ["data-node", "transform-node", "view-node", "table-node", "multiplexer-node", "web-view"] as const;
 
 export function ParameterPanel() {
   const editor = useEditor();
@@ -82,6 +83,9 @@ export function ParameterPanel() {
       )}
       {selectedShape.type === "multiplexer-node" && (
         <MultiplexerNodeParams shape={selectedShape as MultiplexerNodeShape} editor={editor} />
+      )}
+      {selectedShape.type === "web-view" && (
+        <WebViewParams shape={selectedShape as WebViewShape} editor={editor} />
       )}
     </div>
   );
@@ -434,6 +438,41 @@ function MultiplexerNodeParams({ shape, editor }: { shape: MultiplexerNodeShape;
           <option value="">-- none --</option>
           {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
+      </ParamGroup>
+    </div>
+  );
+}
+
+// ── WebView Panel ────────────────────────────────────────────────────────────
+
+function WebViewParams({ shape, editor }: { shape: WebViewShape; editor: ReturnType<typeof useEditor> }) {
+  const { label, url, w, h } = shape.props;
+
+  const updateProp = (key: string, value: unknown) => {
+    editor.updateShape({ id: shape.id, type: "web-view", props: { [key]: value } });
+  };
+
+  return (
+    <div style={{ padding: 12 }}>
+      <ParamGroup label="WebView">
+        <ParamRow label="Label" value={label} onChange={(v) => updateProp("label", v)} />
+        <ParamRow label="URL" value={url} onChange={(v) => updateProp("url", v)} />
+      </ParamGroup>
+      <ParamGroup label="Size">
+        <ParamRow
+          label="Width"
+          value={String(Math.round(w))}
+          onChange={(v) => updateProp("w", Math.max(200, parseInt(v) || 200))}
+        />
+        <ParamRow
+          label="Height"
+          value={String(Math.round(h))}
+          onChange={(v) => updateProp("h", Math.max(150, parseInt(v) || 150))}
+        />
+      </ParamGroup>
+      <ParamGroup label="Position">
+        <ParamRow label="X" value={String(Math.round(shape.x))} readonly />
+        <ParamRow label="Y" value={String(Math.round(shape.y))} readonly />
       </ParamGroup>
     </div>
   );
