@@ -14,7 +14,6 @@ import {
 } from "tldraw";
 import { useRef, useState, useCallback } from "react";
 import { Port } from "../Port";
-import { callClaude } from "../lib/claude-api";
 import { EditableLabel } from "../EditableLabel";
 import { C, FONT, nodeContainerStyle, titleBarStyle } from "../theme";
 
@@ -29,6 +28,7 @@ export type AINodeShape = TLBaseShape<
     model: string;
     status: string;
     errorMessage: string;
+    runNonce: number;
   }
 >;
 
@@ -39,6 +39,7 @@ export class AINodeShapeUtil extends ShapeUtil<AINodeShape> {
     w: T.number, h: T.number,
     label: T.string, prompt: T.string, response: T.string,
     model: T.string, status: T.string, errorMessage: T.string,
+    runNonce: T.number,
   };
 
   getDefaultProps(): AINodeShape["props"] {
@@ -47,6 +48,7 @@ export class AINodeShapeUtil extends ShapeUtil<AINodeShape> {
       prompt: "", response: "",
       model: "claude-opus-4-6",
       status: "idle", errorMessage: "",
+      runNonce: 0,
     };
   }
 
@@ -88,7 +90,7 @@ export class AINodeShapeUtil extends ShapeUtil<AINodeShape> {
 
 function AIComponent({ shape }: { shape: AINodeShape }) {
   const editor = useEditor();
-  const { w, h, label, prompt, response, model, status, errorMessage } = shape.props;
+  const { w, h, label, prompt, response, model, status, errorMessage, runNonce } = shape.props;
   const [localPrompt, setLocalPrompt] = useState(prompt);
 
   if (prompt !== localPrompt) setLocalPrompt(prompt);
@@ -102,14 +104,14 @@ function AIComponent({ shape }: { shape: AINodeShape }) {
     if (!currentPrompt) return;
     editor.updateShape({
       id: shape.id, type: "ai-node",
-      props: { status: "loading", errorMessage: "", prompt: currentPrompt },
+      props: {
+        status: "loading",
+        errorMessage: "",
+        prompt: currentPrompt,
+        runNonce: runNonce + 1,
+      },
     });
-    const { text, error } = await callClaude(currentPrompt);
-    editor.updateShape({
-      id: shape.id, type: "ai-node",
-      props: { response: text || "", status: error ? "error" : "done", errorMessage: error || "" },
-    });
-  }, [editor, shape.id, localPrompt]);
+  }, [editor, shape.id, localPrompt, runNonce]);
 
   const cleanupRef = useRef<(() => void) | null>(null);
   const textareaRef = useCallback((el: HTMLTextAreaElement | null) => {

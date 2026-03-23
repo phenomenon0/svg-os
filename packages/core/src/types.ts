@@ -27,6 +27,7 @@ export interface NodeDef {
   lifecycle?: NodeLifecycle;
   schema?: Record<string, unknown>;
   capabilities?: Capability[];
+  execution?: ExecutionPolicy;
 }
 
 export interface NodeLifecycle {
@@ -64,6 +65,8 @@ export type EventType =
   | "edge:created" | "edge:removed"
   | "port:connected" | "port:disconnected"
   | "exec:start" | "exec:complete" | "exec:error"
+  | "exec:node-start" | "exec:node-complete"
+  | "exec:plan-invalidated" | "exec:cycle"
   | "state:changed"
   | "subsystem:registered" | "subsystem:ready";
 
@@ -78,6 +81,8 @@ export interface CoreEvent<T = unknown> {
 export interface ExecutionPlan {
   order: NodeId[];
   levels: NodeId[][];
+  cycleNodes: NodeId[];
+  hasCycle: boolean;
 }
 
 export interface ExecContext {
@@ -88,6 +93,12 @@ export interface ExecContext {
 }
 
 export type ExecuteFn = (ctx: ExecContext, nodeId: NodeId) => Promise<void> | void;
+
+export interface ExecutionPolicy {
+  mode?: "sync" | "async" | "exclusive";
+  concurrencyKey?: string;
+  cache?: "none" | "inputs";
+}
 
 // Persistence
 export interface GraphSnapshot {

@@ -10,6 +10,7 @@
  */
 
 import { svgToPng } from "./png-export.js";
+import { getBoundedConcurrency, mapConcurrent } from "./concurrency.js";
 import { resolveTemplateSvg } from "./template-bind.js";
 
 export interface BatchProgress {
@@ -49,44 +50,44 @@ export async function renderBatch(
   preprocess?: (row: Record<string, unknown>, index: number) => Promise<Record<string, unknown>>,
 ): Promise<BatchResult> {
   const start = performance.now();
-  const blobs: Blob[] = [];
+  const concurrency = getBoundedConcurrency(4);
+  const blobs = await mapConcurrent(
+    rows,
+    concurrency,
+    async (sourceRow, index) => {
+      // Run preprocess hook (e.g. shader rendering)
+      let row = sourceRow;
+      if (preprocess) {
+        row = await preprocess(row, index);
+      }
 
-  for (let i = 0; i < rows.length; i++) {
-    // Run preprocess hook (e.g. shader rendering)
-    let row = rows[i];
-    if (preprocess) {
-      row = await preprocess(row, i);
-    }
+      // Per-row dimensions override
+      const w = typeof row._width === "number" ? row._width : cardWidth;
+      const h = typeof row._height === "number" ? row._height : cardHeight;
 
-    // Per-row dimensions override
-    const w = typeof row._width === "number" ? row._width : cardWidth;
-    const h = typeof row._height === "number" ? row._height : cardHeight;
+      // Resize SVG if dimensions differ from template default
+      let svg = templateSvg;
+      if (w !== cardWidth || h !== cardHeight) {
+        svg = resizeSvg(svg, w, h);
+      }
 
-    // Resize SVG if dimensions differ from template default
-    let svg = templateSvg;
-    if (w !== cardWidth || h !== cardHeight) {
-      svg = resizeSvg(svg, w, h);
-    }
+      // Resolve bindings for this row
+      const resolvedSvg = resolveTemplateSvg(svg, row, columnMap);
 
-    // Resolve bindings for this row
-    const resolvedSvg = resolveTemplateSvg(svg, row, columnMap);
-
-    // Render to PNG at specified scale and background
-    const blob = await svgToPng(resolvedSvg, w, h, scale, bgColor);
-    blobs.push(blob);
-
-    // Report progress
-    onProgress?.({
-      current: i + 1,
-      total: rows.length,
-      percent: Math.round(((i + 1) / rows.length) * 100),
-    });
-
-    // Yield to the browser every 4 cards to keep UI responsive
-    if (i % 4 === 3) {
-      await yieldToMain();
-    }
-  }
+      // Render to PNG at specified scale and background
+      return svgToPng(resolvedSvg, w, h, scale, bgColor);
+    },
+    {
+      yieldEvery: concurrency,
+      onSettled: (completed, total) => {
+        onProgress?.({
+          current: completed,
+          total,
+          percent: Math.round((completed / total) * 100),
+        });
+      },
+    },
+  );
 
   return {
     blobs,
@@ -117,9 +118,4 @@ export function resizeSvg(svgString: string, newWidth: number, newHeight: number
   }
 
   return new XMLSerializer().serializeToString(svg);
-}
-
-/** Yield control back to the browser's main thread. */
-function yieldToMain(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }

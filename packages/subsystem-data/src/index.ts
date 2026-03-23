@@ -144,6 +144,7 @@ const fetchNodeDef: NodeDef = {
   inputs: [{ name: "url", type: "text", optional: true }],
   outputs: [{ name: "response", type: "data" }],
   capabilities: [{ subsystem: "data", action: "network" }],
+  execution: { mode: "async", concurrencyKey: "network:fetch" },
   async execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
     const inputUrl = ctx.getInput(nodeId, "url") as string;
@@ -186,6 +187,7 @@ const aiNodeDef: NodeDef = {
   capabilities: [
     { subsystem: "data", action: "network", scope: "api.anthropic.com" },
   ],
+  execution: { mode: "exclusive", concurrencyKey: "network:anthropic" },
   async execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
     const inputPrompt = ctx.getInput(nodeId, "prompt") as string;

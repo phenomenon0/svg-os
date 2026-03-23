@@ -5,6 +5,7 @@
  */
 
 import { zipSync, strToU8 } from "fflate";
+import { getBoundedConcurrency, mapConcurrent } from "./concurrency.js";
 
 export interface ZipEntry {
   name: string;
@@ -37,13 +38,16 @@ export async function blobToUint8Array(blob: Blob): Promise<Uint8Array> {
 export async function createZipFromBlobs(
   items: { name: string; blob: Blob }[],
 ): Promise<Blob> {
-  const entries: ZipEntry[] = [];
-  for (const item of items) {
-    entries.push({
+  const concurrency = getBoundedConcurrency(8, 4);
+  const entries = await mapConcurrent(
+    items,
+    concurrency,
+    async (item) => ({
       name: item.name,
       data: await blobToUint8Array(item.blob),
-    });
-  }
+    }),
+    { yieldEvery: concurrency },
+  );
   return createZip(entries);
 }
 

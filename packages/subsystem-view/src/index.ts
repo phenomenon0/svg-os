@@ -6,7 +6,7 @@ const svgTemplateNodeDef: NodeDef = {
   type: "view:svg-template",
   subsystem: "view",
   inputs: [{ name: "data", type: "data" }],
-  outputs: [], // Sink — renders visually, no data output
+  outputs: [{ name: "renderData", type: "data" }],
   execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
     const inputData = ctx.getInput(nodeId, "data") as Record<string, unknown>;
@@ -23,7 +23,7 @@ const svgTemplateNodeDef: NodeDef = {
     // Template rendering is delegated to the Rust WASM bridge
     // The canvas layer calls renderTemplateInline() with this data
     // Here we just store the merged data for the canvas to pick up
-    ctx.setOutput(nodeId, "_renderData", mergedData);
+    ctx.setOutput(nodeId, "renderData", mergedData);
   },
 };
 
@@ -56,14 +56,14 @@ const webviewNodeDef: NodeDef = {
   type: "view:webview",
   subsystem: "view",
   inputs: [{ name: "url", type: "text", optional: true }],
-  outputs: [], // Sink
+  outputs: [{ name: "url", type: "text" }],
   execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
     const inputUrl = ctx.getInput(nodeId, "url") as string;
     const url = inputUrl || (config.url as string) || "";
 
     // Store resolved URL for canvas to render
-    ctx.setOutput(nodeId, "_url", url);
+    ctx.setOutput(nodeId, "url", url);
   },
 };
 
@@ -76,13 +76,13 @@ const metricNodeDef: NodeDef = {
     { name: "value", type: "number" },
     { name: "label", type: "text", optional: true },
   ],
-  outputs: [], // Sink
+  outputs: [{ name: "display", type: "data" }],
   execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
     const value = ctx.getInput(nodeId, "value") ?? config.value ?? 0;
     const label = (ctx.getInput(nodeId, "label") as string) ?? (config.label as string) ?? "Value";
 
-    ctx.setOutput(nodeId, "_display", { value, label });
+    ctx.setOutput(nodeId, "display", { value, label });
   },
 };
 
@@ -92,11 +92,14 @@ const chartNodeDef: NodeDef = {
   type: "view:chart",
   subsystem: "view",
   inputs: [{ name: "data", type: "array" }],
-  outputs: [{ name: "image", type: "image", optional: true }],
+  outputs: [
+    { name: "image", type: "image", optional: true },
+    { name: "chartData", type: "array", optional: true },
+  ],
   execute(ctx: ExecContext, nodeId: NodeId) {
     const data = ctx.getInput(nodeId, "data");
     // Chart rendering delegated to canvas layer (D3 or similar)
-    ctx.setOutput(nodeId, "_chartData", data);
+    ctx.setOutput(nodeId, "chartData", data);
   },
 };
 

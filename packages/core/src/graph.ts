@@ -1,9 +1,11 @@
-import type { NodeId, EdgeId, Edge, NodeState, NodeDef, GraphSnapshot, CoreEvent } from "./types";
+import type { NodeId, EdgeId, Edge, NodeState, NodeDef, GraphSnapshot, ExecutionPlan } from "./types";
 import type { EventBus } from "./event-bus";
 
 export class Graph {
   private nodes = new Map<NodeId, NodeState>();
   private edges = new Map<EdgeId, Edge>();
+  private edgesBySource = new Map<NodeId, Set<EdgeId>>();
+  private edgesByTarget = new Map<NodeId, Set<EdgeId>>();
   private nodeDefs = new Map<string, NodeDef>();
   private undoStack: GraphSnapshot[] = [];
   private redoStack: GraphSnapshot[] = [];
@@ -45,6 +47,8 @@ export class Graph {
 
     if (!this.batching) this.pushUndo();
     this.nodes.set(id, state);
+    this.edgesBySource.set(id, new Set());
+    this.edgesByTarget.set(id, new Set());
     this.events.emit({
       type: "node:created",
       source: "core",
@@ -60,9 +64,15 @@ export class Graph {
     if (!this.batching) this.pushUndo();
 
     // Remove connected edges
-    for (const [edgeId, edge] of this.edges) {
-      if (edge.from.node === id || edge.to.node === id) {
-        this.edges.delete(edgeId);
+    const connected = new Set([
+      ...(this.edgesBySource.get(id) || []),
+      ...(this.edgesByTarget.get(id) || []),
+    ]);
+
+    for (const edgeId of connected) {
+      const edge = this.edges.get(edgeId);
+      if (edge && this.edges.delete(edgeId)) {
+        this.detachEdge(edge);
         this.events.emit({
           type: "edge:removed",
           source: "core",
@@ -73,6 +83,8 @@ export class Graph {
     }
 
     this.nodes.delete(id);
+    this.edgesBySource.delete(id);
+    this.edgesByTarget.delete(id);
     this.events.emit({
       type: "node:removed",
       source: "core",
@@ -143,6 +155,7 @@ export class Graph {
     const id = crypto.randomUUID();
     const edge: Edge = { id, from, to };
     this.edges.set(id, edge);
+    this.attachEdge(edge);
 
     this.events.emit({
       type: "edge:created",
@@ -155,9 +168,11 @@ export class Graph {
   }
 
   removeEdge(id: EdgeId): void {
-    if (!this.edges.has(id)) return;
+    const edge = this.edges.get(id);
+    if (!edge) return;
     if (!this.batching) this.pushUndo();
     this.edges.delete(id);
+    this.detachEdge(edge);
     this.events.emit({
       type: "edge:removed",
       source: "core",
@@ -171,15 +186,19 @@ export class Graph {
   }
 
   getEdgesFrom(nodeId: NodeId, port?: string): Edge[] {
-    return this.getEdges().filter(e =>
-      e.from.node === nodeId && (port === undefined || e.from.port === port)
-    );
+    return [...(this.edgesBySource.get(nodeId) || [])]
+      .map(edgeId => this.edges.get(edgeId))
+      .filter((edge): edge is Edge =>
+        edge !== undefined && (port === undefined || edge.from.port === port)
+      );
   }
 
   getEdgesTo(nodeId: NodeId, port?: string): Edge[] {
-    return this.getEdges().filter(e =>
-      e.to.node === nodeId && (port === undefined || e.to.port === port)
-    );
+    return [...(this.edgesByTarget.get(nodeId) || [])]
+      .map(edgeId => this.edges.get(edgeId))
+      .filter((edge): edge is Edge =>
+        edge !== undefined && (port === undefined || edge.to.port === port)
+      );
   }
 
   // ── Query ───────────────────────────────────────────────────────────
@@ -193,30 +212,44 @@ export class Graph {
   }
 
   topologicalSort(): NodeId[] {
+    return this.planExecution().order;
+  }
+
+  planExecution(): ExecutionPlan {
     const nodeIds = [...this.nodes.keys()];
     const inDegree = new Map<NodeId, number>();
-    const adj = new Map<NodeId, NodeId[]>();
+    const adj = new Map<NodeId, Set<NodeId>>();
 
     for (const id of nodeIds) {
       inDegree.set(id, 0);
-      adj.set(id, []);
+      adj.set(id, new Set());
     }
 
     for (const edge of this.edges.values()) {
-      adj.get(edge.from.node)?.push(edge.to.node);
+      adj.get(edge.from.node)?.add(edge.to.node);
       inDegree.set(edge.to.node, (inDegree.get(edge.to.node) || 0) + 1);
     }
 
-    // Kahn's algorithm
     const queue: NodeId[] = [];
     for (const [id, deg] of inDegree) {
       if (deg === 0) queue.push(id);
     }
 
     const sorted: NodeId[] = [];
+    const levels: NodeId[][] = [];
+    const nodeLevel = new Map<NodeId, number>();
+
     while (queue.length > 0) {
       const id = queue.shift()!;
       sorted.push(id);
+      let level = 0;
+      for (const upstream of this.getUpstream(id)) {
+        level = Math.max(level, (nodeLevel.get(upstream) || 0) + 1);
+      }
+      nodeLevel.set(id, level);
+      while (levels.length <= level) levels.push([]);
+      levels[level].push(id);
+
       for (const next of adj.get(id) || []) {
         const newDeg = (inDegree.get(next) || 1) - 1;
         inDegree.set(next, newDeg);
@@ -224,7 +257,14 @@ export class Graph {
       }
     }
 
-    return sorted;
+    const cycleNodes = nodeIds.filter(id => !nodeLevel.has(id));
+
+    return {
+      order: sorted,
+      levels,
+      cycleNodes,
+      hasCycle: cycleNodes.length > 0,
+    };
   }
 
   // ── Undo/Redo ───────────────────────────────────────────────────────
@@ -277,6 +317,8 @@ export class Graph {
   deserialize(snapshot: GraphSnapshot): void {
     this.nodes.clear();
     this.edges.clear();
+    this.edgesBySource.clear();
+    this.edgesByTarget.clear();
 
     for (const n of snapshot.nodes) {
       this.nodes.set(n.id, {
@@ -287,11 +329,30 @@ export class Graph {
         status: "idle",
         meta: n.meta,
       });
+      this.edgesBySource.set(n.id, new Set());
+      this.edgesByTarget.set(n.id, new Set());
     }
 
     for (const e of snapshot.edges) {
       this.edges.set(e.id, e);
+      this.attachEdge(e);
     }
+  }
+
+  private attachEdge(edge: Edge): void {
+    if (!this.edgesBySource.has(edge.from.node)) {
+      this.edgesBySource.set(edge.from.node, new Set());
+    }
+    if (!this.edgesByTarget.has(edge.to.node)) {
+      this.edgesByTarget.set(edge.to.node, new Set());
+    }
+    this.edgesBySource.get(edge.from.node)!.add(edge.id);
+    this.edgesByTarget.get(edge.to.node)!.add(edge.id);
+  }
+
+  private detachEdge(edge: Edge): void {
+    this.edgesBySource.get(edge.from.node)?.delete(edge.id);
+    this.edgesByTarget.get(edge.to.node)?.delete(edge.id);
   }
 }
 

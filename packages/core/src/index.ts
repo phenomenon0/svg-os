@@ -4,7 +4,7 @@ export type {
   DataType, PortDef, NodeDef, NodeLifecycle, NodeState,
   Edge,
   EventType, CoreEvent,
-  ExecutionPlan, ExecContext, ExecuteFn,
+  ExecutionPlan, ExecContext, ExecuteFn, ExecutionPolicy,
   GraphSnapshot,
   Capability,
   LogEntry,

@@ -6,6 +6,8 @@ export class Scheduler {
   private outputCache = new Map<string, unknown>(); // "nodeId:portName" -> value
   private running = false;
   private cancelled = false;
+  private rerunRequested = false;
+  private readonly concurrencyLimit = getDefaultConcurrency();
 
   constructor(
     private graph: Graph,
@@ -13,116 +15,94 @@ export class Scheduler {
   ) {}
 
   plan(): ExecutionPlan {
-    const order = this.graph.topologicalSort();
-
-    // Group into parallelizable levels
-    const levels: NodeId[][] = [];
-    const nodeLevel = new Map<NodeId, number>();
-
-    for (const id of order) {
-      const upstream = this.graph.getUpstream(id);
-      let level = 0;
-      for (const upId of upstream) {
-        level = Math.max(level, (nodeLevel.get(upId) || 0) + 1);
-      }
-      nodeLevel.set(id, level);
-
-      while (levels.length <= level) levels.push([]);
-      levels[level].push(id);
-    }
-
-    return { order, levels };
+    return this.graph.planExecution();
   }
 
   async execute(plan?: ExecutionPlan): Promise<void> {
-    if (this.running) return;
-    this.running = true;
-    this.cancelled = false;
-    this.outputCache.clear();
-
-    const executionPlan = plan || this.plan();
-
-    this.events.emit({
-      type: "exec:start",
-      source: "core",
-      timestamp: Date.now(),
-      payload: { nodeCount: executionPlan.order.length },
-    });
-
-    try {
-      for (const nodeId of executionPlan.order) {
-        if (this.cancelled) break;
-
-        const node = this.graph.getNode(nodeId);
-        if (!node) continue;
-
-        const def = this.graph.getNodeDef(node.type);
-        if (!def) continue;
-
-        // Build execution context for this node
-        const ctx = this.buildContext(nodeId, def);
-
-        // Update status
-        this.graph.updateNode(nodeId, { status: "running" });
-
-        try {
-          await def.execute(ctx, nodeId);
-
-          this.graph.updateNode(nodeId, {
-            status: "done",
-            error: undefined,
-            meta: {
-              lastRun: Date.now(),
-              runCount: (node.meta.runCount || 0) + 1,
-            },
-          });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          this.graph.updateNode(nodeId, {
-            status: "error",
-            error: message,
-          });
-
-          this.events.emit({
-            type: "exec:error",
-            source: nodeId,
-            timestamp: Date.now(),
-            payload: { nodeId, error: message },
-          });
-        }
-      }
-
+    if (this.running) {
+      this.rerunRequested = true;
       this.events.emit({
-        type: "exec:complete",
+        type: "exec:plan-invalidated",
         source: "core",
         timestamp: Date.now(),
-        payload: { cancelled: this.cancelled },
+        payload: { reason: "run-already-in-progress" },
       });
+      return;
+    }
+
+    this.running = true;
+    this.cancelled = false;
+
+    try {
+      do {
+        this.rerunRequested = false;
+        this.outputCache.clear();
+
+        const executionPlan = plan || this.plan();
+        plan = undefined;
+
+        this.events.emit({
+          type: "exec:start",
+          source: "core",
+          timestamp: Date.now(),
+          payload: { nodeCount: executionPlan.order.length },
+        });
+
+        if (executionPlan.hasCycle) {
+          const cycleError = "Cycle detected in graph";
+          for (const cycleNodeId of executionPlan.cycleNodes) {
+            this.graph.updateNode(cycleNodeId, {
+              status: "error",
+              error: cycleError,
+            });
+          }
+          this.events.emit({
+            type: "exec:cycle",
+            source: "core",
+            timestamp: Date.now(),
+            payload: { nodeIds: executionPlan.cycleNodes },
+          });
+        }
+
+        for (const level of executionPlan.levels) {
+          if (this.cancelled) break;
+          await this.executeLevel(level);
+        }
+
+        this.events.emit({
+          type: "exec:complete",
+          source: "core",
+          timestamp: Date.now(),
+          payload: { cancelled: this.cancelled, rerunRequested: this.rerunRequested },
+        });
+      } while (this.rerunRequested && !this.cancelled);
     } finally {
       this.running = false;
     }
   }
 
   async executeNode(nodeId: NodeId): Promise<void> {
-    // Execute single node + all downstream
-    const allOrder = this.graph.topologicalSort();
-    const idx = allOrder.indexOf(nodeId);
+    const fullPlan = this.plan();
+    const idx = fullPlan.order.indexOf(nodeId);
     if (idx === -1) return;
 
-    // Get this node and all nodes after it that are downstream
     const downstream = new Set<NodeId>();
     downstream.add(nodeId);
 
-    for (let i = idx + 1; i < allOrder.length; i++) {
-      const upstream = this.graph.getUpstream(allOrder[i]);
+    for (let i = idx + 1; i < fullPlan.order.length; i++) {
+      const upstream = this.graph.getUpstream(fullPlan.order[i]);
       if (upstream.some(u => downstream.has(u))) {
-        downstream.add(allOrder[i]);
+        downstream.add(fullPlan.order[i]);
       }
     }
 
     const subPlan: ExecutionPlan = {
-      order: allOrder.filter(id => downstream.has(id)),
-      levels: [],
+      order: fullPlan.order.filter(id => downstream.has(id)),
+      levels: fullPlan.levels
+        .map(level => level.filter(id => downstream.has(id)))
+        .filter(level => level.length > 0),
+      cycleNodes: fullPlan.cycleNodes.filter(id => downstream.has(id)),
+      hasCycle: fullPlan.cycleNodes.some(id => downstream.has(id)),
     };
 
     await this.execute(subPlan);
@@ -138,6 +118,105 @@ export class Scheduler {
 
   getOutput(nodeId: NodeId, portName: string): unknown {
     return this.outputCache.get(`${nodeId}:${portName}`);
+  }
+
+  private async executeLevel(level: NodeId[]): Promise<void> {
+    if (level.length === 0) return;
+
+    const parallel: NodeId[] = [];
+    const exclusiveGroups = new Map<string, NodeId[]>();
+
+    for (const nodeId of level) {
+      const node = this.graph.getNode(nodeId);
+      const def = node ? this.graph.getNodeDef(node.type) : undefined;
+      const execution = def?.execution;
+      const exclusiveKey = execution?.mode === "exclusive"
+        ? execution.concurrencyKey || `${nodeId}:exclusive`
+        : execution?.concurrencyKey;
+
+      if (exclusiveKey) {
+        if (!exclusiveGroups.has(exclusiveKey)) exclusiveGroups.set(exclusiveKey, []);
+        exclusiveGroups.get(exclusiveKey)!.push(nodeId);
+      } else {
+        parallel.push(nodeId);
+      }
+    }
+
+    if (parallel.length > 0) {
+      await runBounded(
+        parallel,
+        this.concurrencyLimit,
+        async (nodeId) => this.executeSingleNode(nodeId),
+      );
+    }
+
+    for (const nodeIds of exclusiveGroups.values()) {
+      for (const nodeId of nodeIds) {
+        if (this.cancelled) return;
+        await this.executeSingleNode(nodeId);
+      }
+    }
+  }
+
+  private async executeSingleNode(nodeId: NodeId): Promise<void> {
+    if (this.cancelled) return;
+
+    const node = this.graph.getNode(nodeId);
+    if (!node) return;
+
+    const def = this.graph.getNodeDef(node.type);
+    if (!def) return;
+
+    const ctx = this.buildContext(nodeId, def);
+    this.graph.updateNode(nodeId, {
+      status: "running",
+      error: undefined,
+    });
+    this.events.emit({
+      type: "exec:node-start",
+      source: nodeId,
+      timestamp: Date.now(),
+      payload: { nodeId, nodeType: node.type },
+    });
+
+    try {
+      await def.execute(ctx, nodeId);
+      const completedAt = Date.now();
+
+      this.graph.updateNode(nodeId, {
+        status: "done",
+        error: undefined,
+        meta: {
+          lastRun: completedAt,
+          runCount: (node.meta.runCount || 0) + 1,
+        },
+      });
+      this.events.emit({
+        type: "exec:node-complete",
+        source: nodeId,
+        timestamp: completedAt,
+        payload: { nodeId, nodeType: node.type, status: "done" },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.graph.updateNode(nodeId, {
+        status: "error",
+        error: message,
+      });
+
+      this.events.emit({
+        type: "exec:error",
+        source: nodeId,
+        timestamp: Date.now(),
+        payload: { nodeId, error: message },
+      });
+      this.events.emit({
+        type: "exec:node-complete",
+        source: nodeId,
+        timestamp: Date.now(),
+        payload: { nodeId, nodeType: node.type, status: "error", error: message },
+      });
+    }
   }
 
   private buildContext(nodeId: NodeId, _def: NodeDef): ExecContext {
@@ -172,4 +251,28 @@ export class Scheduler {
       },
     };
   }
+}
+
+async function runBounded<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  const width = Math.max(1, Math.min(limit, items.length));
+  let index = 0;
+
+  await Promise.all(Array.from({ length: width }, async () => {
+    while (index < items.length) {
+      const current = items[index];
+      index += 1;
+      await worker(current);
+    }
+  }));
+}
+
+function getDefaultConcurrency(): number {
+  const hardware = typeof navigator !== "undefined"
+    ? navigator.hardwareConcurrency || 4
+    : 4;
+  return Math.max(1, Math.min(8, hardware));
 }

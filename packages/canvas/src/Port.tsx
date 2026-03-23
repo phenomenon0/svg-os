@@ -224,6 +224,8 @@ function createConnection(
         type: "arrow", fromId: newArrow.id, toId: fromId,
         props: {
           terminal: "start",
+          portName: fromPort,
+          portSide: "right",
           normalizedAnchor: { x: 1, y: 0.5 },
           isExact: false,
           isPrecise: false,
@@ -233,6 +235,8 @@ function createConnection(
         type: "arrow", fromId: newArrow.id, toId: toId,
         props: {
           terminal: "end",
+          portName: toPort,
+          portSide: "left",
           normalizedAnchor: { x: 0, y: 0.5 },
           isExact: false,
           isPrecise: false,

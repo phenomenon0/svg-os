@@ -5,7 +5,6 @@
  * Phase 3: The Runtime Scheduler is the single execution engine.
  * The RuntimeBridge component syncs tldraw changes into the Runtime graph,
  * triggers scheduler execution, and reads results back into shapes.
- * The legacy reactive-engine is kept as a fallback until fully verified.
  */
 
 import "tldraw/tldraw.css";
@@ -23,16 +22,19 @@ import { CompactNodeShapeUtil } from "./shapes/CompactNodeShape";
 import { NodePalette } from "./NodePalette";
 import { NodeInspector } from "./NodeInspector";
 import { AIChat } from "./AIChat";
+import { CollabOverlay } from "./CollabOverlay";
 import { initWasm } from "./lib/wasm-bridge";
-import { wireReactiveEngine } from "./lib/reactive-engine";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import type { Runtime } from "@svg-os/core";
 import { RuntimeProvider, useRuntime } from "./RuntimeContext";
 import { CommandPalette } from "./CommandPalette";
 import {
+  ensureShapeNode,
+  hasRuntimeConfigChanges,
+  rebuildEdges,
+  removeShapeNode,
+  syncShapeNode,
   syncShapesToRuntime,
-  syncEdgesToRuntime,
-  syncNodeConfig,
   syncRuntimeToShapes,
   clearMappings,
 } from "./lib/runtime-bridge";
@@ -77,7 +79,7 @@ function RuntimeBridge() {
     if (!runtime) return;
     // ── Initial sync: shapes + edges ──────────────────────────────────
     syncShapesToRuntime(editor, runtime);
-    syncEdgesToRuntime(editor, runtime);
+    rebuildEdges(editor, runtime);
 
     // Kick an initial execution so nodes start with computed state
     scheduleRun(runtime);
@@ -86,46 +88,69 @@ function RuntimeBridge() {
     const unsubShape = editor.sideEffects.registerAfterChangeHandler(
       "shape",
       (prev, next) => {
-        if (prev.props === next.props) return;
-        syncNodeConfig(
-          next.id,
+        if (next.type === "arrow") return;
+
+        const propsChanged = hasRuntimeConfigChanges(
+          next.type,
+          prev.props as Record<string, unknown>,
           next.props as Record<string, unknown>,
-          runtime,
         );
+        const metaChanged =
+          prev.x !== next.x ||
+          prev.y !== next.y ||
+          (prev.props as Record<string, unknown>).w !== (next.props as Record<string, unknown>).w ||
+          (prev.props as Record<string, unknown>).h !== (next.props as Record<string, unknown>).h;
+        if (!propsChanged && !metaChanged) return;
+
+        syncShapeNode(next as never, runtime);
         scheduleRun(runtime);
       },
     );
 
-    // ── Watch binding changes -> rebuild edges + schedule ─────────────
+    // ── Watch shape add/remove + binding changes ──────────────────────
     const unsubStore = editor.store.listen(
       (entry) => {
+        let shapeChanged = false;
         let bindingChanged = false;
+
         for (const record of Object.values(entry.changes.added)) {
+          if (record.typeName === "shape" && (record as { type?: string }).type !== "arrow") {
+            ensureShapeNode(record as never, runtime);
+            shapeChanged = true;
+          }
           if (record.typeName === "binding") bindingChanged = true;
         }
         for (const record of Object.values(entry.changes.removed)) {
+          if (record.typeName === "shape" && (record as { type?: string }).type !== "arrow") {
+            removeShapeNode(record.id, runtime);
+            shapeChanged = true;
+          }
           if (record.typeName === "binding") bindingChanged = true;
         }
+
         if (bindingChanged) {
-          // Clear and rebuild all runtime edges
-          for (const edge of runtime.graph.getEdges()) {
-            runtime.graph.removeEdge(edge.id);
-          }
-          syncEdgesToRuntime(editor, runtime);
+          rebuildEdges(editor, runtime);
+        }
+
+        if (shapeChanged || bindingChanged) {
           scheduleRun(runtime);
         }
       },
       { source: "all", scope: "document" },
     );
 
-    // ── After scheduler finishes -> sync results back to shapes ──────
-    const unsubExec = runtime.events.on("exec:complete", () => {
+    const syncOutputs = () => {
       syncRuntimeToShapes(editor, runtime);
-    });
+    };
+    const unsubNodeStart = runtime.events.on("exec:node-start", syncOutputs);
+    const unsubNodeComplete = runtime.events.on("exec:node-complete", syncOutputs);
+    const unsubExec = runtime.events.on("exec:complete", syncOutputs);
 
     return () => {
       unsubShape();
       unsubStore();
+      unsubNodeStart();
+      unsubNodeComplete();
       unsubExec();
       clearMappings();
     };
@@ -152,6 +177,7 @@ function CanvasOverlays() {
   return (
     <>
       <RuntimeBridge />
+      <CollabOverlay />
       <NodePalette />
       <NodeInspector />
       <AIChat />
@@ -197,7 +223,6 @@ export function App() {
           }}
           onMount={(editor) => {
             editor.user.updateUserPreferences({ colorScheme: "dark" });
-            wireReactiveEngine(editor);
           }}
         />
       </div>

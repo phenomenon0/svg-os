@@ -1,9 +1,9 @@
 /**
  * RuntimeContext — provides the @svg-os/core Runtime to all canvas components.
  *
- * The Runtime owns the graph, scheduler, and event bus. During the Phase 2
- * migration it runs IN PARALLEL with the existing reactive-engine; shapes
- * still store their own data in tldraw props.
+ * The Runtime owns graph execution, scheduling, and subsystem registration.
+ * Canvas components consume runtime state; they do not run a second graph
+ * evaluator alongside it.
  */
 
 import { createContext, useContext, useEffect, useState } from "react";
@@ -31,7 +31,6 @@ export function useRuntime(): Runtime | null {
  */
 export function RuntimeProvider({ children }: { children: React.ReactNode }) {
   const [runtime] = useState(() => new Runtime());
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -39,10 +38,8 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
       runtime.register(dataSubsystem),
       runtime.register(viewSubsystem),
     ])
-      .then(() => setReady(true))
       .catch((e) => {
         console.error("[runtime] subsystem registration failed:", e);
-        setReady(true); // render anyway — canvas works without runtime
       });
 
     return () => runtime.destroy();
