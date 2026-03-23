@@ -315,10 +315,19 @@ function CellView({ cell, index, onRun, onDelete, onSourceChange, onToggleLang }
 // ── Add button ───────────────────────────────────────────────────────────────
 
 function AddBtn({ label, color, onClick }: { label: string; color: string; onClick: () => void }) {
+  const cleanupRef = useRef<(() => void) | null>(null);
+  const btnRef = useCallback((el: HTMLButtonElement | null) => {
+    if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
+    if (!el) return;
+    const handler = (e: PointerEvent) => { e.stopPropagation(); e.stopImmediatePropagation(); };
+    el.addEventListener("pointerdown", handler, { capture: true });
+    cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
+  }, []);
+
   return (
     <button
+      ref={btnRef}
       onClick={e => { e.stopPropagation(); onClick(); }}
-      onPointerDown={e => e.stopPropagation()}
       style={{
         background: "transparent", border: `1px solid ${color}44`, borderRadius: 3,
         color, fontSize: 9, padding: "2px 6px", cursor: "pointer", fontFamily: FONT.mono,
