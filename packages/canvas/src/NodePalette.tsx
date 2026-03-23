@@ -5,7 +5,7 @@
 
 import { useEditor } from "tldraw";
 import { listNodeTypes, getNodeType } from "@svg-os/bridge";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 interface NodeTypeInfo {
   id: string;
@@ -97,10 +97,15 @@ export function NodePalette() {
 
   // ── Place handlers ─────────────────────────────────────────────────────────
 
-  const offset = () => ({
-    x: (Math.random() - 0.5) * 100,
-    y: (Math.random() - 0.5) * 80,
-  });
+  // Spread nodes horizontally — each new node goes further right
+  const placementCount = useRef(0);
+  const offset = () => {
+    const i = placementCount.current++;
+    return {
+      x: (i % 4) * 250 - 375,  // spread across 1000px
+      y: Math.floor(i / 4) * 200 - 100,
+    };
+  };
 
   const placeDataNode = useCallback(() => {
     const o = offset();
