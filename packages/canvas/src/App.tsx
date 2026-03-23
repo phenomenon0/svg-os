@@ -180,7 +180,6 @@ function CanvasOverlays() {
       <CollabOverlay />
       <NodePalette />
       <NodeInspector />
-      <AIChat />
       <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
     </>
   );
@@ -220,6 +219,8 @@ export function App() {
           shapeUtils={customShapeUtils}
           components={{
             InFrontOfTheCanvas: CanvasOverlays,
+            TopPanel: null,
+            SharePanel: null,
           }}
           onMount={(editor) => {
             editor.user.updateUserPreferences({ colorScheme: "dark" });

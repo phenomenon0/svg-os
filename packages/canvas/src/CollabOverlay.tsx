@@ -251,7 +251,7 @@ function RoomBar({
   const barStyle: React.CSSProperties = {
     position: "absolute",
     top: 0,
-    left: 180,
+    left: 140,
     right: 0,
     height: 32,
     background: C.bgAlt,

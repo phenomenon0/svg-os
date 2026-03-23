@@ -81,31 +81,30 @@ function defaultPropsForShape(shapeType: string): Record<string, unknown> {
   switch (shapeType) {
     case "terminal-node":
       return {
-        w: 400, h: 280, label: "Terminal", mode: "js",
+        w: 320, h: 220, label: "Terminal", mode: "js",
         history: JSON.stringify([
-          { type: "output", text: "SVG OS Terminal \u2014 JavaScript sandbox" },
-          { type: "output", text: "Type expressions, see results. Try: 1 + 1" },
+          { type: "output", text: "SVG OS \u2014 raw terminal" },
         ]),
       };
     case "notebook-node":
       return {
-        w: 400, h: 320, label: "Notebook",
+        w: 320, h: 240, label: "Notebook",
         cells: JSON.stringify([{ id: "c1", type: "code", lang: "python", source: "print('Hello!')\n2 ** 10", output: "" }]),
       };
     case "data-node":
-      return { w: 300, h: 200, dataJson: '{\n  "name": "Example",\n  "score": 95\n}', label: "Data" };
+      return { w: 220, h: 160, dataJson: '{"name": "Example", "score": 95}', label: "Data" };
     case "table-node":
-      return { w: 320, h: 240, label: "Table", dataJson: "[]", selectedRow: -1, outputMode: "all" };
+      return { w: 280, h: 180, label: "Table", dataJson: "[]", selectedRow: -1, outputMode: "all" };
     case "transform-node":
-      return { w: 180, h: 48, expression: "$.value", label: "Transform" };
+      return { w: 160, h: 40, expression: "$.value", label: "Transform" };
     case "ai-node":
-      return { w: 400, h: 320, label: "AI", prompt: "", response: "", model: getModel(), status: "idle", errorMessage: "" };
+      return { w: 320, h: 240, label: "AI", prompt: "", response: "", model: getModel(), status: "idle", errorMessage: "" };
     case "note-node":
-      return { w: 320, h: 240, label: "Note", content: "", mode: "edit" };
+      return { w: 240, h: 180, label: "Note", content: "", mode: "edit" };
     case "web-view":
-      return { w: 480, h: 360, url: "https://en.m.wikipedia.org/wiki/Emergence", label: "WebView", mode: "url", htmlContent: "" };
+      return { w: 360, h: 280, url: "https://en.m.wikipedia.org/wiki/Emergence", label: "WebView", mode: "url", htmlContent: "" };
     default:
-      return { w: 300, h: 200, label: "Node" };
+      return { w: 200, h: 150, label: "Node" };
   }
 }
 
@@ -472,7 +471,7 @@ export function NodePalette() {
       <div style={{
         position: "absolute",
         left: 0, top: 0, bottom: 0,
-        width: 180,
+        width: 140,
         background: C.bg,
         borderRight: `1px solid ${C.border}`,
         overflowY: "auto",
@@ -546,7 +545,7 @@ export function NodePalette() {
               type: "table-node",
               x: center.x - 160 + o.x,
               y: center.y - 100 + o.y,
-              props: { w: 320, h: 200, label: "Table", dataJson: JSON.stringify(emptyRows), selectedRow: -1, outputMode: "all" },
+              props: { w: 280, h: 180, label: "Table", dataJson: JSON.stringify(emptyRows), selectedRow: -1, outputMode: "all" },
             });
             trackRecent("data:table");
           })}
