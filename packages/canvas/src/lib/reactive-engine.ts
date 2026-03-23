@@ -74,7 +74,7 @@ function evaluateGraph(editor: Editor) {
   try {
   const shapes = editor.getCurrentPageShapes();
   const nodeShapes = shapes.filter((s) =>
-    ["data-node", "table-node", "transform-node", "terminal-node", "view-node", "note-node", "notebook-node", "ai-node"].includes(s.type)
+    ["data-node", "table-node", "transform-node", "terminal-node", "view-node", "note-node", "notebook-node", "ai-node", "web-view", "compact-node"].includes(s.type)
   );
 
   // Build full adjacency for topological sort
@@ -332,19 +332,41 @@ function evaluateNotebookNode(
   shape: { id: string; props: Record<string, unknown> },
   input: Record<string, unknown>,
 ) {
-  // Output the last code cell's result
+  // Output all code cells' results
   try {
     const cells = JSON.parse((shape.props.cells as string) || "[]") as Array<{
       type: string;
       output?: string;
     }>;
-    const lastCode = [...cells].reverse().find((c) => c.type === "code");
+    const codeCells = cells.filter(c => c.type === "code");
+    const merged: Record<string, unknown> = {};
+
+    for (let i = 0; i < codeCells.length; i++) {
+      const cell = codeCells[i];
+      if (!cell.output) continue;
+
+      // Try parsing as JSON first
+      try {
+        const parsed = JSON.parse(cell.output);
+        if (typeof parsed === "object" && parsed !== null) {
+          Object.assign(merged, parsed);
+        } else {
+          merged[`cell${i}`] = parsed;
+        }
+      } catch {
+        // Not JSON — treat as plain text output
+        merged[`cell${i}`] = cell.output;
+      }
+    }
+
+    // Also store the last cell's raw output as "value" for simple piping
+    const lastCode = [...codeCells].reverse().find(c => c.output);
     if (lastCode?.output) {
-      const parsed = JSON.parse(lastCode.output);
-      nodeOutputs.set(
-        shape.id,
-        typeof parsed === "object" && parsed !== null ? parsed : { value: parsed },
-      );
+      merged.value = lastCode.output;
+    }
+
+    if (Object.keys(merged).length > 0) {
+      nodeOutputs.set(shape.id, merged);
       return;
     }
   } catch {
