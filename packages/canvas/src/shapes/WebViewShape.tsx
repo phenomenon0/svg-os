@@ -40,7 +40,7 @@ export class WebViewShapeUtil extends ShapeUtil<WebViewShape> {
     return {
       w: 480,
       h: 360,
-      url: "https://example.com",
+      url: "https://en.wikipedia.org/wiki/Emergence",
       label: "WebView",
     };
   }
