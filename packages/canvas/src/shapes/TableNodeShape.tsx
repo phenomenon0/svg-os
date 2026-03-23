@@ -1,13 +1,11 @@
 /**
- * TableNode — an interactive data table that outputs selected/filtered rows.
+ * TableNode — an editable spreadsheet that IS the data editor.
  *
- * This is the primary data primitive. It shows rows in a spreadsheet-like view.
- * Users can:
- * - Click a row to send just that row downstream
- * - Select "All" to send the entire array
- * - Filter by a condition expression
+ * Click any cell to edit it inline. Tab to next cell. Enter to confirm.
+ * Add rows with the + button. Add columns by connecting to a View (its
+ * template slots appear as columns automatically).
  *
- * Output port sends JSON (single row object or array of rows).
+ * This is the primary data primitive — no JSON editing, just a spreadsheet.
  */
 
 import {
@@ -17,8 +15,9 @@ import {
   T,
   TLBaseShape,
   Vec,
+  useEditor,
 } from "tldraw";
-import { useState } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Port } from "../Port";
 
 export type TableNodeShape = TLBaseShape<
@@ -27,10 +26,10 @@ export type TableNodeShape = TLBaseShape<
     w: number;
     h: number;
     label: string;
-    dataJson: string;    // JSON array of row objects
-    selectedRow: number; // -1 = all rows, 0+ = specific row index
-    filterExpr: string;  // expression to filter rows (empty = no filter)
-    outputMode: string;  // 'selected' | 'all' | 'filtered'
+    dataJson: string;
+    selectedRow: number;
+    filterExpr: string;
+    outputMode: string;
   }
 >;
 
@@ -49,9 +48,9 @@ export class TableNodeShapeUtil extends ShapeUtil<TableNodeShape> {
 
   getDefaultProps(): TableNodeShape["props"] {
     return {
-      w: 320,
-      h: 240,
-      label: "Table",
+      w: 360,
+      h: 280,
+      label: "Data",
       dataJson: JSON.stringify([
         { name: "Pedri", position: "CM", score: 92 },
         { name: "Salah", position: "RW", score: 89 },
@@ -66,11 +65,7 @@ export class TableNodeShapeUtil extends ShapeUtil<TableNodeShape> {
   }
 
   override getGeometry(shape: TableNodeShape) {
-    return new Rectangle2d({
-      width: shape.props.w,
-      height: shape.props.h,
-      isFilled: true,
-    });
+    return new Rectangle2d({ width: shape.props.w, height: shape.props.h, isFilled: true });
   }
 
   override canBind() { return true; }
@@ -78,14 +73,14 @@ export class TableNodeShapeUtil extends ShapeUtil<TableNodeShape> {
   override getHandleSnapGeometry(shape: TableNodeShape) {
     return {
       points: [
-        new Vec(0, shape.props.h / 2),         // input (left) — for receiving data
-        new Vec(shape.props.w, shape.props.h / 2), // output (right) — sends rows
+        new Vec(0, shape.props.h / 2),
+        new Vec(shape.props.w, shape.props.h / 2),
       ],
     };
   }
 
   override component(shape: TableNodeShape) {
-    return <TableNodeComponent shape={shape} />;
+    return <EditableTable shape={shape} />;
   }
 
   override indicator(shape: TableNodeShape) {
@@ -97,22 +92,67 @@ export class TableNodeShapeUtil extends ShapeUtil<TableNodeShape> {
   override onResize(shape: TableNodeShape, info: { scaleX: number; scaleY: number }) {
     return {
       props: {
-        w: Math.max(200, shape.props.w * info.scaleX),
-        h: Math.max(120, shape.props.h * info.scaleY),
+        w: Math.max(240, shape.props.w * info.scaleX),
+        h: Math.max(140, shape.props.h * info.scaleY),
       },
     };
   }
 }
 
-// ── Table Component ──────────────────────────────────────────────────────────
+// ── Editable Table Component ─────────────────────────────────────────────────
 
-function TableNodeComponent({ shape }: { shape: TableNodeShape }) {
-  const { w, h, label, dataJson, selectedRow, outputMode } = shape.props;
+function EditableTable({ shape }: { shape: TableNodeShape }) {
+  const editor = useEditor();
+  const { w, h, label, dataJson } = shape.props;
+  const [editingHeader, setEditingHeader] = useState<string | null>(null);
 
   let rows: Record<string, unknown>[] = [];
-  try { rows = JSON.parse(dataJson); } catch { /* invalid */ }
-
+  try { rows = JSON.parse(dataJson); } catch { /* */ }
   const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+  const updateData = useCallback((newRows: Record<string, unknown>[]) => {
+    editor.updateShape({
+      id: shape.id,
+      type: "table-node",
+      props: { dataJson: JSON.stringify(newRows) },
+    });
+  }, [editor, shape.id]);
+
+  const setCellValue = useCallback((rowIdx: number, col: string, value: string) => {
+    const newRows = [...rows];
+    newRows[rowIdx] = { ...newRows[rowIdx], [col]: isNaN(Number(value)) ? value : Number(value) };
+    updateData(newRows);
+  }, [rows, updateData]);
+
+  const renameColumn = useCallback((oldName: string, newName: string) => {
+    if (!newName || newName === oldName) { setEditingHeader(null); return; }
+    const newRows = rows.map(row => {
+      const newRow: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(row)) {
+        newRow[k === oldName ? newName : k] = v;
+      }
+      return newRow;
+    });
+    updateData(newRows);
+    setEditingHeader(null);
+  }, [rows, updateData]);
+
+  const addRow = useCallback(() => {
+    const empty: Record<string, unknown> = {};
+    columns.forEach(c => empty[c] = "");
+    updateData([...rows, empty]);
+  }, [rows, columns, updateData]);
+
+  const addColumn = useCallback(() => {
+    const name = `col${columns.length + 1}`;
+    const newRows = rows.map(row => ({ ...row, [name]: "" }));
+    updateData(newRows);
+  }, [rows, columns, updateData]);
+
+  const deleteRow = useCallback((idx: number) => {
+    const newRows = rows.filter((_, i) => i !== idx);
+    updateData(newRows);
+  }, [rows, updateData]);
 
   return (
     <HTMLContainer style={{ width: w, height: h, pointerEvents: "all" }}>
@@ -126,7 +166,7 @@ function TableNodeComponent({ shape }: { shape: TableNodeShape }) {
       }}>
         {/* Header */}
         <div style={{
-          height: 32, padding: "0 10px",
+          height: 30, padding: "0 8px",
           background: "#1e293b",
           borderBottom: "1px solid #334155",
           display: "flex", alignItems: "center", gap: 6,
@@ -134,97 +174,154 @@ function TableNodeComponent({ shape }: { shape: TableNodeShape }) {
           flexShrink: 0,
         }}>
           <span style={{ width: 6, height: 6, borderRadius: 2, background: "#3b82f6" }} />
-          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {label}
-          </span>
-          <span style={{ fontSize: 9, color: "#475569" }}>
-            {rows.length} rows
-          </span>
-          <ModeIndicator mode={outputMode} />
+          <span style={{ flex: 1 }}>{label}</span>
+          <span style={{ fontSize: 9, color: "#475569" }}>{rows.length} rows · {columns.length} cols</span>
         </div>
 
-        {/* Table */}
+        {/* Spreadsheet */}
         <div style={{ flex: 1, overflow: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
             <thead>
               <tr>
-                <th style={thStyle}>#</th>
+                <th style={{ ...thStyle, width: 24, textAlign: "center" }}>#</th>
                 {columns.map(col => (
-                  <th key={col} style={thStyle}>{col}</th>
+                  <th
+                    key={col}
+                    style={thStyle}
+                    onClick={(e) => { e.stopPropagation(); setEditingHeader(col); }}
+                  >
+                    {editingHeader === col ? (
+                      <input
+                        defaultValue={col}
+                        autoFocus
+                        onBlur={(e) => renameColumn(col, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") renameColumn(col, (e.target as HTMLInputElement).value);
+                          if (e.key === "Escape") setEditingHeader(null);
+                          e.stopPropagation();
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          width: "100%", padding: "2px 4px",
+                          background: "#1e3a5f", border: "1px solid #3b82f6",
+                          borderRadius: 2, color: "#e2e8f0",
+                          fontSize: 10, fontFamily: "inherit", outline: "none",
+                        }}
+                      />
+                    ) : col}
+                  </th>
                 ))}
+                <th style={{ ...thStyle, width: 24 }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); addColumn(); }}
+                    style={addBtnStyle}
+                    title="Add column"
+                  >+</button>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, i) => (
-                <tr
-                  key={i}
-                  style={{
-                    background: selectedRow === i ? "#1e3a5f" : i % 2 === 0 ? "transparent" : "#0c1220",
-                    cursor: "pointer",
-                  }}
-                >
-                  <td style={{ ...tdStyle, color: "#475569", width: 28 }}>{i}</td>
+              {rows.map((row, ri) => (
+                <tr key={ri} style={{ background: ri % 2 === 0 ? "transparent" : "#0c1220" }}>
+                  <td style={{ ...tdStyle, color: "#475569", textAlign: "center", width: 24, fontSize: 9 }}>{ri}</td>
                   {columns.map(col => (
-                    <td key={col} style={tdStyle}>
-                      {String(row[col] ?? "")}
+                    <td key={col} style={{ ...tdStyle, padding: 0, minWidth: 50 }}>
+                      <CellInput
+                        value={String(row[col] ?? "")}
+                        onChange={(val) => setCellValue(ri, col, val)}
+                      />
                     </td>
                   ))}
+                  <td style={{ ...tdStyle, width: 24, textAlign: "center" }}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteRow(ri); }}
+                      style={{ ...addBtnStyle, color: "#475569", fontSize: 9 }}
+                      title="Delete row"
+                    >×</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        {/* Footer */}
+        {/* Footer with add row */}
         <div style={{
-          height: 24, padding: "0 10px",
+          height: 28, padding: "0 8px",
           borderTop: "1px solid #1e293b",
           display: "flex", alignItems: "center", gap: 6,
-          fontSize: 9, color: "#475569", flexShrink: 0,
+          fontSize: 10, color: "#475569", flexShrink: 0,
         }}>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#22c55e" }} />
-          {outputMode === "all" ? `Sending ${rows.length} rows` :
-           outputMode === "selected" && selectedRow >= 0 ? `Sending row ${selectedRow}` :
-           "Sending all"}
+          <button
+            onClick={(e) => { e.stopPropagation(); addRow(); }}
+            style={{ ...addBtnStyle, padding: "2px 8px", fontSize: 10 }}
+          >+ Row</button>
+          <span style={{ marginLeft: "auto", fontSize: 9 }}>
+            Click cell to edit
+          </span>
         </div>
 
-        {/* Input port (left) */}
         <Port side="left" color="#06b6d4" shapeId={shape.id} />
-
-        {/* Output port (right) */}
         <Port side="right" color="#3b82f6" shapeId={shape.id} />
       </div>
     </HTMLContainer>
   );
 }
 
-function ModeIndicator({ mode }: { mode: string }) {
-  const colors: Record<string, string> = {
-    all: "#3b82f6",
-    selected: "#f59e0b",
-    filtered: "#8b5cf6",
-  };
-  return (
-    <span style={{
-      fontSize: 8, padding: "1px 4px", borderRadius: 3,
-      background: colors[mode] || "#475569",
-      color: "#fff", textTransform: "uppercase", letterSpacing: "0.05em",
-    }}>
-      {mode}
-    </span>
-  );
-}
-
 const thStyle: React.CSSProperties = {
-  padding: "5px 8px", textAlign: "left",
+  padding: "4px 6px", textAlign: "left",
   borderBottom: "1px solid #1e293b",
-  color: "#64748b", fontWeight: 500,
+  color: "#64748b", fontWeight: 600, fontSize: 10,
   position: "sticky", top: 0,
   background: "#0f172a",
+  textTransform: "uppercase", letterSpacing: "0.03em",
+  userSelect: "none",
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: "4px 8px",
+  padding: "3px 6px",
   borderBottom: "1px solid #0c1220",
   color: "#cbd5e1",
 };
+
+const addBtnStyle: React.CSSProperties = {
+  background: "none", border: "1px solid #334155",
+  borderRadius: 3, color: "#64748b",
+  cursor: "pointer", fontSize: 11, padding: "0 4px",
+  lineHeight: "16px",
+};
+
+/** Always-visible input cell. Looks like text until focused. */
+function CellInput({ value, onChange }: { value: string; onChange: (val: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <input
+      ref={ref}
+      defaultValue={value}
+      key={value} // reset when external data changes
+      onBlur={(e) => {
+        if (e.target.value !== value) onChange(e.target.value);
+        e.target.style.background = "transparent";
+      }}
+      onFocus={(e) => {
+        e.target.style.background = "#1e3a5f";
+        e.target.select();
+      }}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        width: "100%", padding: "3px 6px",
+        background: "transparent", border: "none",
+        borderBottom: "1px solid transparent",
+        color: value ? "#cbd5e1" : "#334155",
+        fontSize: 11, fontFamily: "inherit",
+        outline: "none", boxSizing: "border-box",
+      }}
+    />
+  );
+}
