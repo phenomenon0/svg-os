@@ -14,8 +14,7 @@ import {
 } from "tldraw";
 import { useRef, useState, useCallback } from "react";
 import { Port } from "../Port";
-import { executeCode, SUPPORTED_LANGS, getLangShort, type Lang } from "../lib/code-runner";
-import { formatResult } from "../lib/eval-sandbox";
+import { SUPPORTED_LANGS, getLangShort, type Lang } from "../lib/code-runner";
 import { EditableLabel } from "../EditableLabel";
 import { C, FONT, nodeContainerStyle, titleBarStyle } from "../theme";
 
@@ -29,12 +28,30 @@ interface Cell {
 
 export type NotebookNodeShape = TLBaseShape<
   "notebook-node",
-  { w: number; h: number; label: string; cells: string }
+  {
+    w: number;
+    h: number;
+    label: string;
+    cells: string;
+    status: string;
+    runNonce: number;
+    runMode: string;
+    activeCellId: string;
+  }
 >;
 
 export class NotebookNodeShapeUtil extends ShapeUtil<NotebookNodeShape> {
   static override type = "notebook-node" as const;
-  static override props = { w: T.number, h: T.number, label: T.string, cells: T.string };
+  static override props = {
+    w: T.number,
+    h: T.number,
+    label: T.string,
+    cells: T.string,
+    status: T.string,
+    runNonce: T.number,
+    runMode: T.string,
+    activeCellId: T.string,
+  };
 
   getDefaultProps(): NotebookNodeShape["props"] {
     return {
@@ -42,6 +59,10 @@ export class NotebookNodeShapeUtil extends ShapeUtil<NotebookNodeShape> {
       cells: JSON.stringify([
         { id: "c1", type: "code", lang: "python", source: "print('Hello from Python!')\n2 ** 10", output: "" },
       ]),
+      status: "idle",
+      runNonce: 0,
+      runMode: "all",
+      activeCellId: "",
     };
   }
 
@@ -73,8 +94,8 @@ export class NotebookNodeShapeUtil extends ShapeUtil<NotebookNodeShape> {
 
 function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
   const editor = useEditor();
-  const { w, h, label } = shape.props;
-  const [running, setRunning] = useState(false);
+  const { w, h, label, runNonce, status } = shape.props;
+  const running = status === "running" || status === "loading";
 
   let cells: Cell[] = [];
   try {
@@ -85,57 +106,31 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
     editor.updateShape({ id: shape.id, type: "notebook-node", props: { cells: JSON.stringify(newCells) } });
   }, [editor, shape.id]);
 
-  const runCellAsync = useCallback(async (cellId: string) => {
-    const idx = cells.findIndex(c => c.id === cellId);
-    if (idx === -1 || cells[idx].type !== "code") return;
-    const cell = cells[idx];
+  const runCellAsync = useCallback((cellId: string) => {
+    editor.updateShape({
+      id: shape.id,
+      type: "notebook-node",
+      props: {
+        runNonce: runNonce + 1,
+        runMode: "cell",
+        activeCellId: cellId,
+        status: "running",
+      },
+    });
+  }, [editor, runNonce, shape.id]);
 
-    // Show running state
-    const loading = [...cells];
-    loading[idx] = { ...loading[idx], output: "Running\u2026" };
-    updateCells(loading);
-
-    const context: Record<string, unknown> = {};
-    for (let i = 0; i < idx; i++) {
-      if (cells[i].type === "code" && cells[i].output) {
-        try {
-          const parsed = JSON.parse(cells[i].output);
-          if (typeof parsed === "object" && parsed !== null) Object.assign(context, parsed);
-          else context[`cell${i}`] = parsed;
-        } catch { context[`cell${i}`] = cells[i].output; }
-      }
-    }
-
-    const { output, result, error } = await executeCode(cell.lang, cell.source, context);
-    const lines = [...output];
-    if (error) lines.push(`Error: ${error}`);
-    else if (result !== undefined) { const fmt = formatResult(result); if (fmt) lines.push(fmt); }
-
-    const updated = [...cells];
-    updated[idx] = { ...updated[idx], output: lines.join("\n") };
-    updateCells(updated);
-  }, [cells, updateCells]);
-
-  const runAll = useCallback(async () => {
-    setRunning(true);
-    let cur = [...cells];
-    const ctx: Record<string, unknown> = {};
-    for (let i = 0; i < cur.length; i++) {
-      if (cur[i].type !== "code") continue;
-      const { output, result, error } = await executeCode(cur[i].lang, cur[i].source, ctx);
-      const lines = [...output];
-      if (error) lines.push(`Error: ${error}`);
-      else if (result !== undefined) {
-        const fmt = formatResult(result);
-        if (fmt) lines.push(fmt);
-        if (typeof result === "object" && result !== null) Object.assign(ctx, result);
-        else ctx[`cell${i}`] = result;
-      }
-      cur[i] = { ...cur[i], output: lines.join("\n") };
-    }
-    updateCells(cur);
-    setRunning(false);
-  }, [cells, updateCells]);
+  const runAll = useCallback(() => {
+    editor.updateShape({
+      id: shape.id,
+      type: "notebook-node",
+      props: {
+        runNonce: runNonce + 1,
+        runMode: "all",
+        activeCellId: "",
+        status: "running",
+      },
+    });
+  }, [editor, runNonce, shape.id]);
 
   const addCell = useCallback((type: "code" | "markdown", lang: Lang = "python") => {
     updateCells([...cells, { id: `c${Date.now()}`, type, lang, source: type === "code" ? "" : "## Title", output: "" }]);

@@ -54,6 +54,8 @@ const NODE_TYPE_TO_SHAPE: Record<string, string> = {
 const RUNTIME_MANAGED_PROPS: Record<string, string[]> = {
   "view-node": ["renderedContent"],
   "ai-node": ["response", "status", "errorMessage"],
+  "terminal-node": ["history"],
+  "notebook-node": ["status"],
 };
 
 export function registerMapping(shapeId: string, nodeId: string): void {
@@ -116,8 +118,8 @@ export function hasRuntimeConfigChanges(
   prevProps: Record<string, unknown>,
   nextProps: Record<string, unknown>,
 ): boolean {
-  return stableStringify(getRuntimeConfig(shapeType, prevProps))
-    !== stableStringify(getRuntimeConfig(shapeType, nextProps));
+  return stableStringify(normalizeConfigForDiff(shapeType, getRuntimeConfig(shapeType, prevProps)))
+    !== stableStringify(normalizeConfigForDiff(shapeType, getRuntimeConfig(shapeType, nextProps)));
 }
 
 export function syncShapesToRuntime(editor: Editor, runtime: Runtime): void {
@@ -282,6 +284,27 @@ function buildShapePatch(
     }
   }
 
+  if (nodeType === "sys:terminal") {
+    const history = typeof data.history === "string" ? data.history : (shape.props.history as string);
+    if (history !== shape.props.history) {
+      return { history };
+    }
+    return null;
+  }
+
+  if (nodeType === "sys:notebook") {
+    const nextStatus = status === "running" ? "running" : "idle";
+    const nextCells = typeof data.cells === "string" ? data.cells : shape.props.cells;
+
+    if (nextCells !== shape.props.cells || nextStatus !== shape.props.status) {
+      return {
+        cells: nextCells,
+        status: nextStatus,
+      };
+    }
+    return null;
+  }
+
   return null;
 }
 
@@ -360,4 +383,29 @@ function stableStringify(value: unknown): string {
     .sort()
     .map(key => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`)
     .join(",")}}`;
+}
+
+function normalizeConfigForDiff(
+  shapeType: string,
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  if (shapeType === "notebook-node") {
+    const normalized = { ...config };
+    if (typeof normalized.cells === "string") {
+      try {
+        const cells = JSON.parse(normalized.cells) as Array<Record<string, unknown>>;
+        normalized.cells = JSON.stringify(cells.map((cell) => ({
+          id: cell.id,
+          type: cell.type,
+          lang: cell.lang,
+          source: cell.source,
+        })));
+      } catch {
+        // Preserve raw config if parsing fails; the runtime will handle it.
+      }
+    }
+    return normalized;
+  }
+
+  return config;
 }

@@ -7,19 +7,37 @@
 import {
   HTMLContainer, Rectangle2d, ShapeUtil, T, TLBaseShape, Vec, useEditor,
 } from "tldraw";
-import { useRef, useCallback, useState } from "react";
+import { useRef, useCallback, useEffect, useState } from "react";
 import { Port } from "../Port";
 import { EditableLabel } from "../EditableLabel";
 import { C, FONT } from "../theme";
 
 export type TerminalNodeShape = TLBaseShape<
   "terminal-node",
-  { w: number; h: number; history: string; label: string; mode: string }
+  {
+    w: number;
+    h: number;
+    history: string;
+    label: string;
+    mode: string;
+    pendingCommand: string;
+    runNonce: number;
+    clearNonce: number;
+  }
 >;
 
 export class TerminalNodeShapeUtil extends ShapeUtil<TerminalNodeShape> {
   static override type = "terminal-node" as const;
-  static override props = { w: T.number, h: T.number, history: T.string, label: T.string, mode: T.string };
+  static override props = {
+    w: T.number,
+    h: T.number,
+    history: T.string,
+    label: T.string,
+    mode: T.string,
+    pendingCommand: T.string,
+    runNonce: T.number,
+    clearNonce: T.number,
+  };
 
   getDefaultProps(): TerminalNodeShape["props"] {
     return {
@@ -28,6 +46,9 @@ export class TerminalNodeShapeUtil extends ShapeUtil<TerminalNodeShape> {
         { type: "output", text: "SVG OS \u2014 raw terminal" },
         { type: "output", text: "Full browser API access. Try: fetch, document, navigator" },
       ]),
+      pendingCommand: "",
+      runNonce: 0,
+      clearNonce: 0,
     };
   }
 
@@ -59,12 +80,9 @@ export class TerminalNodeShapeUtil extends ShapeUtil<TerminalNodeShape> {
 
 interface HistoryEntry { type: "input" | "output" | "error"; text: string; }
 
-// Persistent scope across commands — variables survive between evals
-const terminalScopes = new Map<string, Record<string, unknown>>();
-
 function TerminalComponent({ shape }: { shape: TerminalNodeShape }) {
   const editor = useEditor();
-  const { w, h, history: historyJson, label } = shape.props;
+  const { w, h, history: historyJson, label, runNonce, clearNonce } = shape.props;
   const [inputValue, setInputValue] = useState("");
   const [cmdHistory, setCmdHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
@@ -73,104 +91,34 @@ function TerminalComponent({ shape }: { shape: TerminalNodeShape }) {
   let history: HistoryEntry[] = [];
   try { history = JSON.parse(historyJson); } catch { /* */ }
 
-  // Get or create persistent scope for this terminal
-  if (!terminalScopes.has(shape.id)) {
-    terminalScopes.set(shape.id, {});
-  }
-  const scope = terminalScopes.get(shape.id)!;
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [historyJson]);
 
-  const appendHistory = useCallback((entries: HistoryEntry[]) => {
-    const current: HistoryEntry[] = (() => {
-      try { return JSON.parse(shape.props.history); } catch { return []; }
-    })();
-    const updated = [...current, ...entries].slice(-200);
+  const executeCommand = useCallback((cmd: string) => {
+    if (!cmd.trim()) return;
     editor.updateShape({
       id: shape.id, type: "terminal-node",
-      props: { history: JSON.stringify(updated) },
+      props: {
+        pendingCommand: cmd,
+        runNonce: runNonce + 1,
+      },
     });
-    setTimeout(() => {
-      if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    }, 50);
-  }, [editor, shape.id, shape.props.history]);
-
-  const executeCommand = useCallback(async (cmd: string) => {
-    if (!cmd.trim()) return;
-    const entries: HistoryEntry[] = [{ type: "input", text: cmd }];
-
-    // Capture console.log
-    const logs: string[] = [];
-    const origLog = console.log;
-    const origWarn = console.warn;
-    const origError = console.error;
-    console.log = (...args: unknown[]) => {
-      logs.push(args.map(a => typeof a === "object" ? JSON.stringify(a, null, 2) : String(a)).join(" "));
-    };
-    console.warn = console.log;
-    console.error = (...args: unknown[]) => {
-      logs.push("[error] " + args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" "));
-    };
-
-    try {
-      // Raw eval with persistent scope — no sandbox, full power
-      // Variables from previous commands are available
-      const scopeKeys = Object.keys(scope);
-      const scopeValues = Object.values(scope);
-
-      let result: unknown;
-      try {
-        // Try as expression first (returns value)
-        const fn = new Function(...scopeKeys, `"use strict"; return (${cmd})`);
-        result = await fn(...scopeValues);
-      } catch {
-        // Try as statement(s)
-        const fn = new Function(...scopeKeys, `"use strict"; ${cmd}`);
-        result = await fn(...scopeValues);
-      }
-
-      // Extract any new variable assignments back into scope
-      // (This doesn't work perfectly with Function, but we try)
-      try {
-        const assignMatch = cmd.match(/^(?:let|const|var)\s+(\w+)\s*=/);
-        if (assignMatch) {
-          const varName = assignMatch[1];
-          const fn2 = new Function(...scopeKeys, `"use strict"; ${cmd}; return ${varName};`);
-          scope[varName] = await fn2(...scopeValues);
-        }
-      } catch { /* */ }
-
-      for (const line of logs) entries.push({ type: "output", text: line });
-
-      if (result !== undefined) {
-        const display = typeof result === "object"
-          ? JSON.stringify(result, null, 2)
-          : String(result);
-        if (display) entries.push({ type: "output", text: display });
-      }
-    } catch (err: unknown) {
-      for (const line of logs) entries.push({ type: "output", text: line });
-      entries.push({
-        type: "error",
-        text: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      console.log = origLog;
-      console.warn = origWarn;
-      console.error = origError;
-    }
-
-    appendHistory(entries);
     setCmdHistory(prev => [cmd, ...prev].slice(0, 50));
     setHistoryIdx(-1);
     setInputValue("");
-  }, [appendHistory, scope]);
+  }, [editor, shape.id, runNonce]);
 
   const clearHistory = useCallback(() => {
     editor.updateShape({
       id: shape.id, type: "terminal-node",
-      props: { history: "[]" },
+      props: {
+        clearNonce: clearNonce + 1,
+      },
     });
-    terminalScopes.set(shape.id, {});
-  }, [editor, shape.id]);
+  }, [clearNonce, editor, shape.id]);
 
   // Capture-phase for input
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -266,7 +214,7 @@ function TerminalComponent({ shape }: { shape: TerminalNodeShape }) {
           />
         </div>
 
-        <Port side="left" type="data" name="input" shapeId={shape.id} />
+        <Port side="left" type="text" name="stdin" shapeId={shape.id} />
         <Port side="right" type="data" name="result" shapeId={shape.id} />
       </div>
     </HTMLContainer>

@@ -9,6 +9,7 @@
  */
 
 import type { Subsystem, NodeDef, ExecContext, NodeId } from "@svg-os/core";
+import { executeNotebook, executeTerminal } from "./execution";
 
 // ── File Open Node ───────────────────────────────────────────────────────────
 // Opens a real file from the user's filesystem via File System Access API.
@@ -272,20 +273,18 @@ const terminalNodeDef: NodeDef = {
   outputs: [
     { name: "stdout", type: "text" },
     { name: "result", type: "data" },
+    { name: "history", type: "text" },
   ],
   capabilities: [{ subsystem: "system", action: "execute" }],
+  execution: { mode: "exclusive", concurrencyKey: "system:terminal" },
   async execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
-    const history = config.history as string || "[]";
+    const stdin = ctx.getInput(nodeId, "stdin");
+    const { history, stdout, result } = await executeTerminal(nodeId, config, stdin);
 
-    try {
-      const entries = JSON.parse(history) as Array<{ type: string; text: string }>;
-      const lastInput = [...entries].reverse().find(e => e.type === "input");
-      if (lastInput) {
-        ctx.setOutput(nodeId, "stdout", lastInput.text);
-        ctx.setOutput(nodeId, "result", { command: lastInput.text, mode: config.mode || "js" });
-      }
-    } catch { /* */ }
+    ctx.setOutput(nodeId, "history", JSON.stringify(history));
+    ctx.setOutput(nodeId, "stdout", stdout);
+    ctx.setOutput(nodeId, "result", result);
   },
 };
 
@@ -295,39 +294,27 @@ const notebookNodeDef: NodeDef = {
   type: "sys:notebook",
   subsystem: "system",
   inputs: [{ name: "data", type: "data", optional: true }],
-  outputs: [{ name: "all", type: "data" }],
+  outputs: [
+    { name: "all", type: "data" },
+    { name: "cells", type: "text" },
+  ],
   capabilities: [{ subsystem: "system", action: "execute" }],
-  execute(ctx: ExecContext, nodeId: NodeId) {
+  execution: { mode: "exclusive", concurrencyKey: "system:notebook" },
+  async execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
-    const cellsJson = (config.cells as string) || "[]";
+    const upstreamData = ctx.getInput(nodeId, "data");
 
-    try {
-      const cells = JSON.parse(cellsJson) as Array<{
-        id: string; type: string; lang: string; output: string;
-      }>;
+    if (upstreamData && typeof upstreamData === "object" && upstreamData !== null) {
+      config.data = upstreamData;
+    }
 
-      const allOutputs: Record<string, unknown> = {};
-      const codeCells = cells.filter(c => c.type === "code");
+    const { cells, allOutputs, cellOutputs } = await executeNotebook(config);
+    ctx.setOutput(nodeId, "cells", JSON.stringify(cells));
+    ctx.setOutput(nodeId, "all", allOutputs);
 
-      for (let i = 0; i < codeCells.length; i++) {
-        const cell = codeCells[i];
-        if (cell.output) {
-          try {
-            const parsed = JSON.parse(cell.output);
-            if (typeof parsed === "object" && parsed !== null) {
-              Object.assign(allOutputs, parsed);
-            } else {
-              allOutputs[`cell${i}`] = parsed;
-            }
-          } catch {
-            allOutputs[`cell${i}`] = cell.output;
-          }
-          ctx.setOutput(nodeId, `cell:${i}`, allOutputs[`cell${i}`] || cell.output);
-        }
-      }
-
-      ctx.setOutput(nodeId, "all", allOutputs);
-    } catch { /* */ }
+    for (const [portName, value] of Object.entries(cellOutputs)) {
+      ctx.setOutput(nodeId, portName, value);
+    }
   },
 };
 

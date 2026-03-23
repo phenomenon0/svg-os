@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
+    "@runno/runtime": "^0.10.0",
     "@svg-os/core": "workspace:*"
   }
 }
