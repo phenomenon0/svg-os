@@ -150,11 +150,7 @@ export function NodePalette() {
         w: 320, h: 240,
         label: "Table",
         dataJson: JSON.stringify([
-          { name: "Pedri", position: "CM", score: 92 },
-          { name: "Salah", position: "RW", score: 89 },
-          { name: "Haaland", position: "ST", score: 91 },
-          { name: "Rodri", position: "DM", score: 90 },
-          { name: "Bellingham", position: "AM", score: 88 },
+          { col1: "", col2: "", col3: "" },
         ]),
         selectedRow: -1,
         filterExpr: "",

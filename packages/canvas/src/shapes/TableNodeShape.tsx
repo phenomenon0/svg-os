@@ -52,11 +52,7 @@ export class TableNodeShapeUtil extends ShapeUtil<TableNodeShape> {
       h: 280,
       label: "Data",
       dataJson: JSON.stringify([
-        { name: "Pedri", position: "CM", score: 92 },
-        { name: "Salah", position: "RW", score: 89 },
-        { name: "Haaland", position: "ST", score: 91 },
-        { name: "Rodri", position: "DM", score: 90 },
-        { name: "Bellingham", position: "AM", score: 88 },
+        { col1: "", col2: "", col3: "" },
       ]),
       selectedRow: -1,
       filterExpr: "",
