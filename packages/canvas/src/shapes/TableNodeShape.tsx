@@ -19,6 +19,7 @@ import {
   Vec,
 } from "tldraw";
 import { useState } from "react";
+import { Port } from "../Port";
 
 export type TableNodeShape = TLBaseShape<
   "table-node",
@@ -188,18 +189,10 @@ function TableNodeComponent({ shape }: { shape: TableNodeShape }) {
         </div>
 
         {/* Input port (left) */}
-        <div style={{
-          position: "absolute", left: -7, top: "50%", transform: "translateY(-50%)",
-          width: 14, height: 14, borderRadius: "50%",
-          background: "#06b6d4", border: "2px solid #0f172a",
-        }} />
+        <Port side="left" color="#06b6d4" shapeId={shape.id} />
 
         {/* Output port (right) */}
-        <div style={{
-          position: "absolute", right: -7, top: "50%", transform: "translateY(-50%)",
-          width: 14, height: 14, borderRadius: "50%",
-          background: "#3b82f6", border: "2px solid #0f172a",
-        }} />
+        <Port side="right" color="#3b82f6" shapeId={shape.id} />
       </div>
     </HTMLContainer>
   );

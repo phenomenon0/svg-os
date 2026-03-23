@@ -15,6 +15,7 @@ import {
   TLBaseShape,
   Vec,
 } from "tldraw";
+import { Port } from "../Port";
 
 export type ViewNodeShape = TLBaseShape<
   "view-node",
@@ -92,20 +93,7 @@ export class ViewNodeShapeUtil extends ShapeUtil<ViewNodeShape> {
         }}
       >
         {/* Input port */}
-        <div
-          style={{
-            position: "absolute",
-            left: -7,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 10,
-            height: 10,
-            borderRadius: "50%",
-            background: "#06b6d4",
-            border: "2px solid #0f172a",
-            zIndex: 10,
-          }}
-        />
+        <Port side="left" color="#06b6d4" shapeId={shape.id} />
 
         {isSvg ? (
           <SvgView w={w} h={h} content={renderedContent} />

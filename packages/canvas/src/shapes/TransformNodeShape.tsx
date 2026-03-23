@@ -12,6 +12,7 @@ import {
   TLBaseShape,
   Vec,
 } from "tldraw";
+import { Port } from "../Port";
 
 export type TransformNodeShape = TLBaseShape<
   "transform-node",
@@ -84,19 +85,7 @@ export class TransformNodeShapeUtil extends ShapeUtil<TransformNodeShape> {
           }}
         >
           {/* Input port */}
-          <div
-            style={{
-              position: "absolute",
-              left: -7,
-              top: "50%",
-              transform: "translateY(-50%)",
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              background: "#8b5cf6",
-              border: "2px solid #0f172a",
-            }}
-          />
+          <Port side="left" color="#8b5cf6" shapeId={shape.id} />
           <div
             style={{
               width: 8,
@@ -133,19 +122,7 @@ export class TransformNodeShapeUtil extends ShapeUtil<TransformNodeShape> {
             {truncExpr}
           </div>
           {/* Output port */}
-          <div
-            style={{
-              position: "absolute",
-              right: -7,
-              top: "50%",
-              transform: "translateY(-50%)",
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              background: "#8b5cf6",
-              border: "2px solid #0f172a",
-            }}
-          />
+          <Port side="right" color="#8b5cf6" shapeId={shape.id} />
         </div>
       </HTMLContainer>
     );
