@@ -15,6 +15,7 @@
 
 import type { Editor } from "tldraw";
 import { getNodeType, listNodeTypes, renderTemplateInline } from "@svg-os/bridge";
+import { evalJS, resultToData } from "./eval-sandbox";
 
 // Node outputs are cached here between evaluations
 const nodeOutputs = new Map<string, Record<string, unknown>>();
@@ -29,7 +30,7 @@ export function wireReactiveEngine(editor: Editor) {
   // After shape props change -> schedule re-evaluation
   editor.sideEffects.registerAfterChangeHandler("shape", (prev, next, source) => {
     if (isEvaluating) return;
-    const validTypes = ["data-node", "table-node", "transform-node", "view-node", "multiplexer-node"];
+    const validTypes = ["data-node", "table-node", "transform-node", "terminal-node", "view-node", "multiplexer-node"];
     if (!validTypes.includes(next.type)) return;
     if (prev.props === next.props) return;
     scheduleEvaluation(editor);
@@ -73,7 +74,7 @@ function evaluateGraph(editor: Editor) {
   try {
   const shapes = editor.getCurrentPageShapes();
   const nodeShapes = shapes.filter((s) =>
-    ["data-node", "table-node", "transform-node", "view-node", "multiplexer-node"].includes(s.type)
+    ["data-node", "table-node", "transform-node", "terminal-node", "view-node", "multiplexer-node"].includes(s.type)
   );
 
   // Build full adjacency for topological sort
@@ -136,6 +137,8 @@ function evaluateGraph(editor: Editor) {
       evaluateTableNode(shapeAny, input);
     } else if (shapeAny.type === "transform-node") {
       evaluateTransformNode(shapeAny, input);
+    } else if (shapeAny.type === "terminal-node") {
+      evaluateTerminalNode(editor, shapeAny, input);
     } else if (shapeAny.type === "view-node") {
       evaluateViewNode(editor, shapeAny, input);
     } else if (shapeAny.type === "multiplexer-node") {
@@ -192,18 +195,32 @@ function evaluateTransformNode(
   input: Record<string, unknown>,
 ) {
   const expression = shape.props.expression as string;
-  try {
-    const result = evalExpression(expression, input);
-    nodeOutputs.set(
-      shape.id,
-      typeof result === "object" && result !== null
-        ? (result as Record<string, unknown>)
-        : { value: result },
-    );
-  } catch {
-    // Pass input through on error
-    nodeOutputs.set(shape.id, input);
+  const { result, error } = evalJS(expression, input);
+  if (error) {
+    nodeOutputs.set(shape.id, input); // pass through on error
+  } else {
+    nodeOutputs.set(shape.id, resultToData(result));
   }
+}
+
+function evaluateTerminalNode(
+  editor: Editor,
+  shape: { id: string; props: Record<string, unknown> },
+  input: Record<string, unknown>,
+) {
+  // Terminal outputs its last result to downstream nodes
+  const historyJson = shape.props.history as string;
+  try {
+    const history = JSON.parse(historyJson) as Array<{ type: string; text: string }>;
+    // Find last input command
+    const lastInput = [...history].reverse().find(e => e.type === "input");
+    if (lastInput) {
+      const { result } = evalJS(lastInput.text, input);
+      nodeOutputs.set(shape.id, resultToData(result));
+      return;
+    }
+  } catch { /* */ }
+  nodeOutputs.set(shape.id, input); // pass through if no commands
 }
 
 function evaluateViewNode(
@@ -277,50 +294,6 @@ function evaluateMultiplexerNode(
     }
   }
   nodeOutputs.set(shape.id, {});
-}
-
-// ── Expression evaluator ──────────────────────────────────────────────────────
-
-/**
- * Evaluate a simple expression against input data.
- * Supports:
- * - $.field — access input field
- * - $.field.nested — nested access
- * - Literal JSON passthrough
- * - Simple arithmetic: +, -, *, /
- */
-function evalExpression(
-  expression: string,
-  input: Record<string, unknown>,
-): unknown {
-  const expr = expression.trim();
-
-  // $.field access
-  if (expr.startsWith("$.")) {
-    const path = expr.slice(2).split(".");
-    let current: unknown = input;
-    for (const key of path) {
-      if (current == null || typeof current !== "object") return null;
-      current = (current as Record<string, unknown>)[key];
-    }
-    return current;
-  }
-
-  // Passthrough all input
-  if (expr === "$" || expr === "$.") {
-    return input;
-  }
-
-  // Try JSON literal
-  try {
-    return JSON.parse(expr);
-  } catch {
-    /* not JSON */
-  }
-
-  // Simple map expression: { key: $.field, ... }
-  // For safety, just pass input through with expression as a label
-  return { ...input, _expression: expr };
 }
 
 // ── Fallback template renderer ────────────────────────────────────────────────

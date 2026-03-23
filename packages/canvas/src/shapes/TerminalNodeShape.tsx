@@ -19,6 +19,7 @@ import {
 } from "tldraw";
 import { useRef, useCallback, useState } from "react";
 import { Port } from "../Port";
+import { evalJS, formatResult } from "../lib/eval-sandbox";
 
 export type TerminalNodeShape = TLBaseShape<
   "terminal-node",
@@ -127,50 +128,18 @@ function TerminalComponent({ shape }: { shape: TerminalNodeShape }) {
     if (!cmd.trim()) return;
     const entries: HistoryEntry[] = [{ type: "input", text: cmd }];
 
-    try {
-      // Capture console.log
-      const logs: string[] = [];
-      const origLog = console.log;
-      console.log = (...args: unknown[]) => {
-        logs.push(args.map(a => typeof a === "object" ? JSON.stringify(a, null, 2) : String(a)).join(" "));
-      };
+    // Use shared eval sandbox — passes upstream data as $ variable
+    const { output, result, error } = evalJS(cmd);
 
-      // Execute
-      const result = new Function(`"use strict"; return (${cmd})`)();
+    for (const line of output) {
+      entries.push({ type: "output", text: line });
+    }
 
-      console.log = origLog;
-
-      // Add console.log outputs
-      for (const log of logs) {
-        entries.push({ type: "output", text: log });
-      }
-
-      // Add return value
-      if (result !== undefined) {
-        const display = typeof result === "object" ? JSON.stringify(result, null, 2) : String(result);
-        entries.push({ type: "output", text: display });
-      }
-    } catch (err: unknown) {
-      // Try as statement (not expression)
-      try {
-        const logs: string[] = [];
-        const origLog = console.log;
-        console.log = (...args: unknown[]) => {
-          logs.push(args.map(a => typeof a === "object" ? JSON.stringify(a, null, 2) : String(a)).join(" "));
-        };
-
-        new Function(`"use strict"; ${cmd}`)();
-
-        console.log = origLog;
-        for (const log of logs) {
-          entries.push({ type: "output", text: log });
-        }
-        if (logs.length === 0) {
-          entries.push({ type: "output", text: "(no output)" });
-        }
-      } catch (err2: unknown) {
-        entries.push({ type: "error", text: String(err2 instanceof Error ? err2.message : err2) });
-      }
+    if (error) {
+      entries.push({ type: "error", text: error });
+    } else if (result !== undefined) {
+      const display = formatResult(result);
+      if (display) entries.push({ type: "output", text: display });
     }
 
     appendHistory(entries);
