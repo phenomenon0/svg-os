@@ -533,32 +533,23 @@ export function NodePalette() {
           {/* Core primitives — always visible */}
           <SectionHeader text="Primitives" />
           {renderItem("view:note", "Note", C.accent, () => placeNode("view:note"))}
-          <div style={{ position: "relative" }}>
-            {renderItem("data:table", "Table", C.blue, () => setGridPickerOpen(!gridPickerOpen))}
-            {gridPickerOpen && (
-              <GridPicker onSelect={(cols, rows) => {
-                setGridPickerOpen(false);
-                const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-                const colNames = Array.from({ length: cols }, (_, i) => letters[i] || `col${i + 1}`);
-                const emptyRows = Array.from({ length: rows }, () => {
-                  const r: Record<string, string> = {};
-                  colNames.forEach(c => r[c] = "");
-                  return r;
-                });
-                const o = offset();
-                const center = editor.getViewportScreenCenter();
-                const w = Math.max(200, cols * 80 + 50);
-                const h = Math.max(120, rows * 28 + 60);
-                editor.createShape({
-                  type: "table-node",
-                  x: center.x - w / 2 + o.x,
-                  y: center.y - h / 2 + o.y,
-                  props: { w, h, label: "Table", dataJson: JSON.stringify(emptyRows), selectedRow: -1, outputMode: "all" },
-                });
-                trackRecent("data:table");
-              }} onClose={() => setGridPickerOpen(false)} />
-            )}
-          </div>
+          {renderItem("data:table", "Table", C.blue, () => {
+            const o = offset();
+            const center = editor.getViewportScreenCenter();
+            const cols = ["A", "B", "C"];
+            const emptyRows = Array.from({ length: 3 }, () => {
+              const r: Record<string, string> = {};
+              cols.forEach(c => r[c] = "");
+              return r;
+            });
+            editor.createShape({
+              type: "table-node",
+              x: center.x - 160 + o.x,
+              y: center.y - 100 + o.y,
+              props: { w: 320, h: 200, label: "Table", dataJson: JSON.stringify(emptyRows), selectedRow: -1, outputMode: "all" },
+            });
+            trackRecent("data:table");
+          })}
           {[
             { type: "sys:terminal", label: "Terminal", color: C.green },
             { type: "data:json", label: "Data", color: C.green },
