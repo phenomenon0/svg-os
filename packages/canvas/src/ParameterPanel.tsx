@@ -261,23 +261,32 @@ function ViewNodeParams({
   editor: ReturnType<typeof useEditor>;
 }) {
   const { viewType, typeId, variant } = shape.props;
+  const viewData: Record<string, unknown> = (() => {
+    try { return JSON.parse((shape.props as any).data || "{}"); } catch { return {}; }
+  })();
 
   const isSvg = viewType === "svg-template";
   const displayType = isSvg ? `SVG: ${typeId || "unknown"}` : `HTML: ${variant || "card"}`;
 
-  // Get slot names for SVG templates
-  let slotNames: string[] = [];
+  // Get slot definitions for SVG templates
+  let slots: Array<{ field: string; bind_type: string }> = [];
   if (isSvg && typeId) {
     try {
       const types = listNodeTypes();
       const nt = types.find((t: { id: string }) => t.id === typeId);
-      if (nt) {
-        slotNames = nt.slots.map((s: { field: string }) => s.field);
-      }
-    } catch {
-      /* WASM not ready */
-    }
+      if (nt) slots = nt.slots;
+    } catch { /* WASM not ready */ }
   }
+
+  const updateSlotValue = (field: string, value: string) => {
+    const current: Record<string, unknown> = { ...viewData };
+    current[field] = value;
+    editor.updateShape({
+      id: shape.id,
+      type: "view-node",
+      props: { data: JSON.stringify(current) },
+    });
+  };
 
   // Check for upstream connection
   const shapes = editor.getCurrentPageShapes();
@@ -310,20 +319,16 @@ function ViewNodeParams({
         )}
       </ParamGroup>
 
-      {slotNames.length > 0 && (
-        <ParamGroup label="Template Slots">
-          {slotNames.map((name) => (
-            <div
-              key={name}
-              style={{
-                fontSize: 11,
-                color: "#94a3b8",
-                padding: "2px 0",
-                fontFamily: "'JetBrains Mono', monospace",
-              }}
-            >
-              {name}
-            </div>
+      {slots.length > 0 && (
+        <ParamGroup label="Data Fields">
+          {slots.map((slot) => (
+            <ParamRow
+              key={slot.field}
+              label={slot.field}
+              value={viewData[slot.field] != null ? String(viewData[slot.field]) : ""}
+              placeholder={slot.bind_type}
+              onChange={(val) => updateSlotValue(slot.field, val)}
+            />
           ))}
         </ParamGroup>
       )}

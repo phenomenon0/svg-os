@@ -206,6 +206,7 @@ export function NodePalette() {
             variant: "",
             htmlTitle: "",
             htmlContent: "",
+            data: "",
           },
         });
       } catch (e) {
@@ -232,6 +233,7 @@ export function NodePalette() {
           variant: htmlDef.variant,
           htmlTitle: htmlDef.title,
           htmlContent: htmlDef.content,
+          data: "",
         },
       });
     },

@@ -28,7 +28,7 @@ export function wireReactiveEngine(editor: Editor) {
   // After shape props change -> schedule re-evaluation
   editor.sideEffects.registerAfterChangeHandler("shape", (prev, next, source) => {
     if (source !== "user") return;
-    const validTypes = ["data-node", "transform-node", "view-node"];
+    const validTypes = ["data-node", "table-node", "transform-node", "view-node", "multiplexer-node"];
     if (!validTypes.includes(next.type)) return;
     if (prev.props === next.props) return;
     scheduleEvaluation(editor);
@@ -128,10 +128,14 @@ function evaluateGraph(editor: Editor) {
     const shapeAny = shape as unknown as { id: string; type: string; props: Record<string, unknown> };
     if (shapeAny.type === "data-node") {
       evaluateDataNode(shapeAny, input);
+    } else if (shapeAny.type === "table-node") {
+      evaluateTableNode(shapeAny, input);
     } else if (shapeAny.type === "transform-node") {
       evaluateTransformNode(shapeAny, input);
     } else if (shapeAny.type === "view-node") {
       evaluateViewNode(editor, shapeAny, input);
+    } else if (shapeAny.type === "multiplexer-node") {
+      evaluateMultiplexerNode(editor, shapeAny, input);
     }
   }
 }
@@ -146,6 +150,31 @@ function evaluateDataNode(
   try {
     const parsed = JSON.parse(dataJson);
     nodeOutputs.set(shape.id, typeof parsed === "object" && parsed !== null ? parsed : { value: parsed });
+  } catch {
+    nodeOutputs.set(shape.id, {});
+  }
+}
+
+function evaluateTableNode(
+  shape: { id: string; props: Record<string, unknown> },
+  _input: Record<string, unknown>,
+) {
+  const dataJson = shape.props.dataJson as string;
+  try {
+    const rows = JSON.parse(dataJson);
+    if (Array.isArray(rows)) {
+      // Output the selected row or all rows
+      const selectedRow = shape.props.selectedRow as number;
+      const outputMode = shape.props.outputMode as string;
+      if (outputMode === "selected" && selectedRow >= 0 && selectedRow < rows.length) {
+        nodeOutputs.set(shape.id, rows[selectedRow] as Record<string, unknown>);
+      } else {
+        // Output first row as the primary data (for single-view connections)
+        // Store full array as _rows for multiplexer
+        const first = rows[0] || {};
+        nodeOutputs.set(shape.id, { ...first, _rows: rows });
+      }
+    }
   } catch {
     nodeOutputs.set(shape.id, {});
   }
@@ -178,17 +207,26 @@ function evaluateViewNode(
   const viewType = shape.props.viewType as string;
   const typeId = shape.props.typeId as string;
 
-  if (viewType === "svg-template" && typeId && Object.keys(input).length > 0) {
+  // Merge View's own data (from parameter panel) with upstream input
+  let ownData: Record<string, unknown> = {};
+  try {
+    const d = shape.props.data as string;
+    if (d) ownData = JSON.parse(d);
+  } catch { /* */ }
+  const mergedInput = { ...ownData, ...input };
+  // Remove internal _rows key from render data
+  delete mergedInput._rows;
+
+  if (viewType === "svg-template" && typeId && Object.keys(mergedInput).length > 0) {
     // Render SVG template with input data
     try {
       const nt = getNodeType(typeId) as { template_svg?: string } | null;
       if (nt?.template_svg) {
         let rendered: string;
         try {
-          rendered = renderTemplateInline(nt.template_svg, input);
+          rendered = renderTemplateInline(nt.template_svg, mergedInput);
         } catch {
-          // Fallback: simple mustache replacement
-          rendered = renderTemplateFallback(nt.template_svg, input);
+          rendered = renderTemplateFallback(nt.template_svg, mergedInput);
         }
 
         editor.updateShape({
@@ -207,6 +245,23 @@ function evaluateViewNode(
   // Future: map input data to htmlContent dynamically.
 
   // ViewNode doesn't produce output (it's a sink)
+  nodeOutputs.set(shape.id, {});
+}
+
+function evaluateMultiplexerNode(
+  editor: Editor,
+  shape: { id: string; props: Record<string, unknown> },
+  input: Record<string, unknown>,
+) {
+  // Feed the input array to the multiplexer's inputDataJson prop
+  const rows = (input._rows as unknown[]) || [];
+  if (rows.length > 0) {
+    editor.updateShape({
+      id: shape.id as any,
+      type: "multiplexer-node",
+      props: { inputDataJson: JSON.stringify(rows) },
+    });
+  }
   nodeOutputs.set(shape.id, {});
 }
 

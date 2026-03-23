@@ -28,6 +28,7 @@ export type ViewNodeShape = TLBaseShape<
     variant: string;        // for HTML views: dashboard/table/terminal/metric/markdown
     htmlTitle: string;      // for HTML views
     htmlContent: string;    // for HTML views
+    data: string;           // JSON data for template rendering (from param panel or upstream)
   }
 >;
 
@@ -43,6 +44,7 @@ export class ViewNodeShapeUtil extends ShapeUtil<ViewNodeShape> {
     variant: T.string,
     htmlTitle: T.string,
     htmlContent: T.string,
+    data: T.string,
   };
 
   getDefaultProps(): ViewNodeShape["props"] {
@@ -55,6 +57,7 @@ export class ViewNodeShapeUtil extends ShapeUtil<ViewNodeShape> {
       variant: "",
       htmlTitle: "",
       htmlContent: "",
+      data: "",
     };
   }
 
