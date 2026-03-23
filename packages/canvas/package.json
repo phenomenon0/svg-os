@@ -11,6 +11,10 @@
   "dependencies": {
     "@runno/runtime": "^0.10.0",
     "@svg-os/bridge": "workspace:*",
+    "@svg-os/core": "workspace:*",
+    "@svg-os/subsystem-system": "workspace:*",
+    "@svg-os/subsystem-data": "workspace:*",
+    "@svg-os/subsystem-view": "workspace:*",
     "pyodide": "^0.29.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

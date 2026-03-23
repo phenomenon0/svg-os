@@ -20,6 +20,18 @@ importers:
       '@svg-os/bridge':
         specifier: workspace:*
         version: link:../bridge
+      '@svg-os/core':
+        specifier: workspace:*
+        version: link:../core
+      '@svg-os/subsystem-data':
+        specifier: workspace:*
+        version: link:../subsystem-data
+      '@svg-os/subsystem-system':
+        specifier: workspace:*
+        version: link:../subsystem-system
+      '@svg-os/subsystem-view':
+        specifier: workspace:*
+        version: link:../subsystem-view
       pyodide:
         specifier: ^0.29.3
         version: 0.29.3
