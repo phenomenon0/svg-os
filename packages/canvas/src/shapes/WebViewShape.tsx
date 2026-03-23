@@ -115,6 +115,7 @@ function WebViewContent({
   const editor = useEditor();
   const [localUrl, setLocalUrl] = useState(url);
   const [activeUrl, setActiveUrl] = useState(url);
+  const [useProxy, setUseProxy] = useState(false);
 
   if (url !== activeUrl && url !== localUrl) {
     setLocalUrl(url);
@@ -151,10 +152,14 @@ function WebViewContent({
   };
 
   const refresh = () => {
-    // Force iframe reload by toggling src
     setActiveUrl("about:blank");
     setTimeout(() => setActiveUrl(normalizeUrl(localUrl)), 100);
   };
+
+  // Route through CORS proxy to bypass X-Frame-Options
+  const iframeSrc = activeUrl === "about:blank" ? activeUrl
+    : useProxy ? `https://corsproxy.io/?url=${encodeURIComponent(activeUrl)}`
+    : activeUrl;
 
   const urlBarHeight = 32;
 
@@ -190,6 +195,18 @@ function WebViewContent({
           style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 12, padding: "0 2px", flexShrink: 0 }}
           title="Refresh"
         >↻</button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setUseProxy(!useProxy); }}
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{
+            background: useProxy ? "#22c55e22" : "none",
+            border: useProxy ? "1px solid #22c55e" : "1px solid #334155",
+            color: useProxy ? "#22c55e" : "#64748b",
+            cursor: "pointer", fontSize: 10, padding: "0 4px",
+            borderRadius: 3, flexShrink: 0,
+          }}
+          title={useProxy ? "Proxy ON — can load any site" : "Proxy OFF — direct connection"}
+        >{useProxy ? "🔓" : "🔒"}</button>
         <input
           type="text"
           value={localUrl}
@@ -213,7 +230,7 @@ function WebViewContent({
         />
       </div>
       <iframe
-        src={activeUrl}
+        src={iframeSrc}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation allow-modals allow-presentation allow-downloads"
         style={{
           border: "none",
