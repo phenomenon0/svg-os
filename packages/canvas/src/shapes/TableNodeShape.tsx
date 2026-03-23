@@ -218,9 +218,11 @@ function TableComponent({ shape }: { shape: TableNodeShape }) {
 
 function CellInput({ value, onChange, style: extraStyle }: { value: string; onChange: (v: string) => void; style?: React.CSSProperties }) {
   const [local, setLocal] = useState(value);
+  const [focused, setFocused] = useState(false);
   const cleanupRef = useRef<(() => void) | null>(null);
 
-  if (value !== local) setLocal(value);
+  // Only sync from parent when not editing
+  if (value !== local && !focused) setLocal(value);
 
   const inputRef = useCallback((el: HTMLInputElement | null) => {
     if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
@@ -233,8 +235,9 @@ function CellInput({ value, onChange, style: extraStyle }: { value: string; onCh
   return (
     <input ref={inputRef} type="text" value={local}
       onChange={e => setLocal(e.target.value)}
-      onBlur={() => { if (local !== value) onChange(local); }}
-      onKeyDown={e => { e.stopPropagation(); if (e.key === "Enter") onChange(local); }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => { setFocused(false); if (local !== value) onChange(local); }}
+      onKeyDown={e => { e.stopPropagation(); if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); } }}
       style={{
         width: "100%", padding: "2px 4px",
         background: "transparent", border: "none",
