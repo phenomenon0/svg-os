@@ -233,13 +233,32 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
           {columns.length === 0 ? (
             <div style={{
               height: "100%", display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center", gap: 8,
+              alignItems: "center", justifyContent: "center", gap: 12,
               color: "#475569", fontSize: 11,
             }}>
               <div>Empty table</div>
               <div style={{ fontSize: 10, color: "#334155" }}>
-                Click <b>+</b> to add columns, or connect to a View and click <b>⇄ Sync</b>
+                Add a column to get started, or connect to a View and click <b>⇄ Sync</b>
               </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); addColumn(); }}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  background: "none", border: "2px solid #3b82f6",
+                  borderRadius: 6, color: "#3b82f6",
+                  cursor: "pointer", fontSize: 14, padding: "6px 18px",
+                  fontWeight: 600, letterSpacing: "0.02em",
+                }}
+              >＋ Add Column</button>
+              <button
+                disabled
+                style={{
+                  background: "none", border: "1px solid #1e293b",
+                  borderRadius: 6, color: "#334155",
+                  cursor: "not-allowed", fontSize: 12, padding: "4px 14px",
+                  fontWeight: 500,
+                }}
+              >+ Add Row</button>
             </div>
           ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
@@ -277,6 +296,7 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
                 <th style={{ ...thStyle, width: 24 }}>
                   <button
                     onClick={(e) => { e.stopPropagation(); addColumn(); }}
+                    onPointerDown={(e) => e.stopPropagation()}
                     style={addBtnStyle}
                     title="Add column"
                   >+</button>

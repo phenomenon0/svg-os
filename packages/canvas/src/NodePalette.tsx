@@ -79,7 +79,7 @@ const SECTION_COLORS: Record<string, string> = {
 export function NodePalette() {
   const editor = useEditor();
   const [svgTemplates, setSvgTemplates] = useState<NodeTypeInfo[]>([]);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ views: true });
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -302,22 +302,20 @@ export function NodePalette() {
       {!collapsed.data && (
         <div style={{ padding: "0 4px 4px" }}>
           <PaletteItem
-            icon="\uD83D\uDCE6"
+            icon="📦"
             label="Static JSON"
             accent={SECTION_COLORS.data}
             onClick={placeDataNode}
           />
           <PaletteItem
-            icon="\uD83D\uDCCA"
+            icon="📊"
             label="Table"
-            sublabel="rows"
             accent="#3b82f6"
             onClick={placeTableNode}
           />
           <PaletteItem
-            icon="\u00D7"
+            icon="×"
             label="Multiplexer"
-            sublabel="×N"
             accent="#ec4899"
             onClick={placeMultiplexerNode}
           />
@@ -334,7 +332,7 @@ export function NodePalette() {
       {!collapsed.transform && (
         <div style={{ padding: "0 4px 4px" }}>
           <PaletteItem
-            icon="\u26A1"
+            icon="⚡"
             label="Expression"
             accent={SECTION_COLORS.transform}
             onClick={placeTransformNode}
@@ -366,7 +364,6 @@ export function NodePalette() {
             <PaletteItem
               key={t.id}
               label={t.name}
-              sublabel="svg"
               accent={SECTION_COLORS.views}
               onClick={() => placeSvgView(t.id)}
             />
@@ -376,7 +373,6 @@ export function NodePalette() {
             <PaletteItem
               key={hv.id}
               label={hv.name}
-              sublabel="html"
               accent="#f59e0b"
               onClick={() => placeHtmlView(hv)}
             />
@@ -394,9 +390,8 @@ export function NodePalette() {
       {!collapsed.web && (
         <div style={{ padding: "0 4px 4px" }}>
           <PaletteItem
-            icon={"\uD83C\uDF10"}
+            icon="🌐"
             label="WebView"
-            sublabel="iframe"
             accent={SECTION_COLORS.web}
             onClick={placeWebView}
           />
@@ -468,7 +463,7 @@ function PaletteItem({
     <div
       onClick={onClick}
       style={{
-        padding: "6px 8px",
+        padding: "4px 8px",
         margin: "1px 0",
         borderRadius: 4,
         cursor: "pointer",

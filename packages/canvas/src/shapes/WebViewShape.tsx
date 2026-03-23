@@ -11,6 +11,7 @@ import {
   T,
   TLBaseShape,
   Vec,
+  useEditor,
 } from "tldraw";
 import { Port } from "../Port";
 import { useState } from "react";
@@ -111,6 +112,7 @@ function WebViewContent({
   url: string;
   shapeId: string;
 }) {
+  const editor = useEditor();
   const [localUrl, setLocalUrl] = useState(url);
   const [activeUrl, setActiveUrl] = useState(url);
 
@@ -119,9 +121,15 @@ function WebViewContent({
     setActiveUrl(url);
   }
 
+  const commitUrl = (newUrl: string) => {
+    setActiveUrl(newUrl);
+    editor.updateShape({ id: shapeId as any, type: "web-view", props: { url: newUrl } });
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation();
     if (e.key === "Enter") {
-      setActiveUrl(localUrl);
+      commitUrl(localUrl);
     }
   };
 
@@ -168,6 +176,8 @@ function WebViewContent({
           onChange={(e) => setLocalUrl(e.target.value)}
           onKeyDown={handleKeyDown}
           onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={() => { if (localUrl !== activeUrl) commitUrl(localUrl); }}
           placeholder="https://example.com"
           style={{
             flex: 1,
