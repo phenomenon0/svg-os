@@ -30,7 +30,7 @@ export function wireReactiveEngine(editor: Editor) {
   // After shape props change -> schedule re-evaluation
   editor.sideEffects.registerAfterChangeHandler("shape", (prev, next, source) => {
     if (isEvaluating) return;
-    const validTypes = ["data-node", "table-node", "transform-node", "terminal-node", "view-node", "note-node", "notebook-node", "ai-node"];
+    const validTypes = ["data-node", "table-node", "transform-node", "terminal-node", "view-node", "note-node", "notebook-node", "ai-node", "web-view", "compact-node"];
     if (!validTypes.includes(next.type)) return;
     if (prev.props === next.props) return;
     scheduleEvaluation(editor);
@@ -134,7 +134,7 @@ function evaluateGraph(editor: Editor) {
     if (shapeAny.type === "data-node") {
       evaluateDataNode(shapeAny, input);
     } else if (shapeAny.type === "table-node") {
-      evaluateTableNode(shapeAny, input);
+      evaluateTableNode(editor, shapeAny, input);
     } else if (shapeAny.type === "transform-node") {
       evaluateTransformNode(shapeAny, input);
     } else if (shapeAny.type === "terminal-node") {
@@ -142,11 +142,13 @@ function evaluateGraph(editor: Editor) {
     } else if (shapeAny.type === "view-node") {
       evaluateViewNode(editor, shapeAny, input);
     } else if (shapeAny.type === "note-node") {
-      evaluateNoteNode(shapeAny, input);
+      evaluateNoteNode(editor, shapeAny, input);
     } else if (shapeAny.type === "notebook-node") {
       evaluateNotebookNode(shapeAny, input);
     } else if (shapeAny.type === "ai-node") {
       evaluateAINode(editor, shapeAny, input);
+    } else if (shapeAny.type === "web-view") {
+      evaluateWebView(editor, shapeAny, input);
     }
   }
   } finally {
@@ -170,21 +172,33 @@ function evaluateDataNode(
 }
 
 function evaluateTableNode(
+  editor: Editor,
   shape: { id: string; props: Record<string, unknown> },
-  _input: Record<string, unknown>,
+  input: Record<string, unknown>,
 ) {
-  const dataJson = shape.props.dataJson as string;
+  // If upstream provides an array (via _rows or direct array), feed it into the table
+  const upstreamRows = input._rows as unknown[] || (Array.isArray(input) ? input : null);
+  if (upstreamRows && upstreamRows.length > 0) {
+    const newJson = JSON.stringify(upstreamRows);
+    const currentJson = shape.props.dataJson as string;
+    if (newJson !== currentJson) {
+      editor.updateShape({
+        id: shape.id as any,
+        type: "table-node",
+        props: { dataJson: newJson },
+      });
+    }
+  }
+
+  const dataJson = upstreamRows ? JSON.stringify(upstreamRows) : (shape.props.dataJson as string);
   try {
     const rows = JSON.parse(dataJson);
     if (Array.isArray(rows)) {
-      // Output the selected row or all rows
       const selectedRow = shape.props.selectedRow as number;
       const outputMode = shape.props.outputMode as string;
       if (outputMode === "selected" && selectedRow >= 0 && selectedRow < rows.length) {
         nodeOutputs.set(shape.id, rows[selectedRow] as Record<string, unknown>);
       } else {
-        // Output first row as the primary data (for single-view connections)
-        // Store full array as _rows for multiplexer
         const first = rows[0] || {};
         nodeOutputs.set(shape.id, { ...first, _rows: rows });
       }
@@ -280,16 +294,37 @@ function evaluateViewNode(
 }
 
 function evaluateNoteNode(
+  editor: Editor,
   shape: { id: string; props: Record<string, unknown> },
   input: Record<string, unknown>,
 ) {
-  let content = (shape.props.content as string) || "";
-  // Interpolate {{field}} placeholders from upstream
+  const rawContent = (shape.props.content as string) || "";
+  let content = rawContent;
+
   if (Object.keys(input).length > 0) {
-    content = content.replace(/\{\{(\w+)\}\}/g, (_m, field) => {
+    // Interpolate {{field}} placeholders
+    content = rawContent.replace(/\{\{(\w+)\}\}/g, (_m, field) => {
       return input[field] != null ? String(input[field]) : "";
     });
+
+    // If note is empty, show upstream data as formatted JSON
+    if (!rawContent.trim()) {
+      content = Object.entries(input)
+        .map(([k, v]) => `**${k}**: ${typeof v === "object" ? JSON.stringify(v) : v}`)
+        .join("\n\n");
+    }
+
+    // WRITE BACK: update content + switch to preview to show result
+    const currentContent = shape.props.content as string;
+    if (content !== currentContent) {
+      editor.updateShape({
+        id: shape.id as any,
+        type: "note-node",
+        props: { content, mode: "preview" },
+      });
+    }
   }
+
   nodeOutputs.set(shape.id, { content });
 }
 
@@ -423,6 +458,23 @@ function escapeHtml(s: string): string {
 }
 
 // ── Graph building ────────────────────────────────────────────────────────────
+
+function evaluateWebView(
+  editor: Editor,
+  shape: { id: string; props: Record<string, unknown> },
+  input: Record<string, unknown>,
+) {
+  // If upstream provides a URL (as "url" field or "value" field), update the iframe
+  const upstreamUrl = (input.url as string) || (input.value as string) || "";
+  if (upstreamUrl && upstreamUrl !== shape.props.url) {
+    editor.updateShape({
+      id: shape.id as any,
+      type: "web-view",
+      props: { url: upstreamUrl },
+    });
+  }
+  nodeOutputs.set(shape.id, {});
+}
 
 function rebuildDataFlowGraph(editor: Editor) {
   dataFlowGraph.clear();
