@@ -19,6 +19,7 @@ import {
 } from "tldraw";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Port } from "../Port";
+import { listNodeTypes } from "@svg-os/bridge";
 
 export type TableNodeShape = TLBaseShape<
   "table-node",
@@ -150,6 +151,53 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
     updateData(newRows);
   }, [rows, updateData]);
 
+  const autoPopulate = useCallback((rowCount = 5) => {
+    const newRows: Record<string, unknown>[] = [];
+    for (let i = 0; i < rowCount; i++) {
+      const row: Record<string, unknown> = {};
+      columns.forEach(col => { row[col] = generateDummy(col); });
+      newRows.push(row);
+    }
+    updateData(newRows);
+  }, [columns, updateData]);
+
+  // Check if connected downstream View needs specific columns
+  const inheritColumnsFromView = useCallback(() => {
+    const shapes = editor.getCurrentPageShapes();
+    const arrows = shapes.filter((s: any) => s.type === "arrow");
+
+    for (const arrow of arrows) {
+      const bindings = editor.getBindingsFromShape(arrow.id, "arrow");
+      const startB = bindings.find((b: any) => b.props?.terminal === "start");
+      const endB = bindings.find((b: any) => b.props?.terminal === "end");
+
+      if (startB?.toId === shape.id && endB) {
+        const targetShape = editor.getShape(endB.toId);
+        if (targetShape?.type === "view-node") {
+          const typeId = (targetShape.props as any).typeId;
+          if (typeId) {
+            try {
+              const types = listNodeTypes();
+              const nt = types.find((t: any) => t.id === typeId);
+              if (nt?.slots) {
+                const slotFields = nt.slots.map((s: any) => s.field);
+                const newCols = slotFields.filter((f: string) => !columns.includes(f));
+                if (newCols.length > 0) {
+                  const newRows = rows.map(row => {
+                    const updated = { ...row };
+                    newCols.forEach((c: string) => { updated[c] = ""; });
+                    return updated;
+                  });
+                  updateData(newRows);
+                }
+              }
+            } catch { /* */ }
+          }
+        }
+      }
+    }
+  }, [editor, shape.id, rows, columns, updateData]);
+
   return (
     <HTMLContainer style={{ width: w, height: h, pointerEvents: "all" }}>
       <div style={{
@@ -251,11 +299,21 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
         }}>
           <button
             onClick={(e) => { e.stopPropagation(); addRow(); }}
+            onPointerDown={(e) => e.stopPropagation()}
             style={{ ...addBtnStyle, padding: "2px 8px", fontSize: 10 }}
           >+ Row</button>
-          <span style={{ marginLeft: "auto", fontSize: 9 }}>
-            Click cell to edit
-          </span>
+          <button
+            onClick={(e) => { e.stopPropagation(); autoPopulate(5); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{ ...addBtnStyle, padding: "2px 8px", fontSize: 10, color: "#f59e0b" }}
+            title="Fill with dummy data based on column names"
+          >Auto-fill</button>
+          <button
+            onClick={(e) => { e.stopPropagation(); inheritColumnsFromView(); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{ ...addBtnStyle, padding: "2px 8px", fontSize: 10, color: "#06b6d4" }}
+            title="Add columns needed by connected View"
+          >⇄ Sync</button>
         </div>
 
         <Port side="left" color="#06b6d4" shapeId={shape.id} />
@@ -287,6 +345,84 @@ const addBtnStyle: React.CSSProperties = {
   cursor: "pointer", fontSize: 11, padding: "0 4px",
   lineHeight: "16px",
 };
+
+// ── Dummy Data Bank ──────────────────────────────────────────────────────────
+
+const DUMMY_BANK: Record<string, () => unknown> = {
+  // Names
+  name: () => pick(["Pedri", "Salah", "Haaland", "Messi", "Mbappé", "Rodri", "Bellingham", "Vinicius", "De Bruyne", "Saka"]),
+  player: () => DUMMY_BANK.name(),
+  first_name: () => pick(["Marcus", "Luka", "Jadon", "Erling", "Kylian", "Jude", "Phil", "Bukayo"]),
+  last_name: () => pick(["Rashford", "Modric", "Sancho", "Haaland", "Mbappé", "Bellingham", "Foden", "Saka"]),
+  team: () => pick(["Barcelona", "Liverpool", "Man City", "Real Madrid", "PSG", "Bayern", "Arsenal", "Chelsea"]),
+  team_a: () => DUMMY_BANK.team(),
+  team_b: () => DUMMY_BANK.team(),
+
+  // Football
+  position: () => pick(["GK", "CB", "LB", "RB", "DM", "CM", "AM", "LW", "RW", "ST"]),
+  score: () => randInt(60, 99),
+  goals: () => randInt(0, 30),
+  assists: () => randInt(0, 20),
+  appearances: () => randInt(10, 50),
+  rating: () => randInt(60, 99),
+  overall: () => randInt(70, 99),
+  pace: () => randInt(50, 99),
+  pac: () => randInt(50, 99),
+  sho: () => randInt(40, 99),
+  pas: () => randInt(50, 99),
+  dri: () => randInt(50, 99),
+  def: () => randInt(30, 99),
+  phy: () => randInt(40, 99),
+  age: () => randInt(17, 38),
+  number: () => randInt(1, 99),
+  value: () => `€${randInt(5, 200)}M`,
+
+  // Colors
+  color: () => pick(["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4"]),
+  fill: () => DUMMY_BANK.color(),
+  accent: () => DUMMY_BANK.color(),
+  color_a: () => DUMMY_BANK.color(),
+  color_b: () => DUMMY_BANK.color(),
+  background: () => DUMMY_BANK.color(),
+  team_color: () => DUMMY_BANK.color(),
+
+  // Text
+  title: () => pick(["Season Review", "Match Report", "Transfer News", "Injury Update", "Tactical Analysis"]),
+  label: () => pick(["Primary", "Secondary", "Featured", "Spotlight", "Rising Star"]),
+  description: () => pick(["Outstanding performance", "Key player this season", "Breakthrough talent", "Consistent performer"]),
+  status: () => pick(["active", "injured", "suspended", "on loan", "available"]),
+  tournament: () => pick(["Champions League", "Premier League", "La Liga", "World Cup", "Europa League"]),
+  stage: () => pick(["Group Stage", "Quarter-final", "Semi-final", "Final", "Round of 16"]),
+  date: () => `2025-${String(randInt(1, 12)).padStart(2, "0")}-${String(randInt(1, 28)).padStart(2, "0")}`,
+  game: () => pick(["Match Day 12", "Gameweek 28", "Round 3", "Fixture 15"]),
+  broadcast: () => pick(["Sky Sports", "BT Sport", "ESPN", "DAZN", "beIN Sports"]),
+
+  // Numbers
+  score_a: () => randInt(0, 5),
+  score_b: () => randInt(0, 5),
+  width: () => randInt(100, 400),
+  height: () => randInt(100, 400),
+  progress: () => randInt(0, 100),
+
+  // URLs
+  url: () => `https://example.com/${randInt(1, 999)}`,
+  image: () => `https://picsum.photos/${randInt(200, 400)}`,
+  avatar: () => DUMMY_BANK.image!(),
+  avatar_url: () => DUMMY_BANK.image!(),
+};
+
+function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
+function randInt(min: number, max: number): number { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+function generateDummy(col: string): unknown {
+  const key = col.toLowerCase().replace(/[\s-]/g, "_");
+  if (DUMMY_BANK[key]) return DUMMY_BANK[key]();
+  // Guess from partial match
+  for (const [k, fn] of Object.entries(DUMMY_BANK)) {
+    if (key.includes(k) || k.includes(key)) return fn();
+  }
+  return `${col}_${randInt(1, 100)}`;
+}
 
 /** Always-visible input cell. Looks like text until focused. */
 function CellInput({ value, onChange }: { value: string; onChange: (val: string) => void }) {
