@@ -97,7 +97,7 @@ export class TableNodeShapeUtil extends ShapeUtil<TableNodeShape> {
 function EditableTable({ shape }: { shape: TableNodeShape }) {
   const editor = useEditor();
   const { w, h, label, dataJson } = shape.props;
-  const [editingHeader, setEditingHeader] = useState<string | null>(null);
+  // Header editing is now always-on (HeaderInput component)
 
   let rows: Record<string, unknown>[] = [];
   try { rows = JSON.parse(dataJson); } catch { /* */ }
@@ -267,16 +267,12 @@ function EditableTable({ shape }: { shape: TableNodeShape }) {
               <tr>
                 <th style={{ ...thStyle, width: 24, textAlign: "center" }}>#</th>
                 {columns.map(col => (
-                  <th key={col} style={thStyle}>
-                    {editingHeader === col ? (
-                      <HeaderInput
-                        defaultValue={col}
-                        onCommit={(v) => renameColumn(col, v)}
-                        onCancel={() => setEditingHeader(null)}
-                      />
-                    ) : (
-                      <ClickableHeader label={col} onClick={() => setEditingHeader(col)} />
-                    )}
+                  <th key={col} style={{ ...thStyle, padding: 0 }}>
+                    <HeaderInput
+                      defaultValue={col}
+                      onCommit={(v) => renameColumn(col, v)}
+                      onCancel={() => {}}
+                    />
                   </th>
                 ))}
                 <th style={{ ...thStyle, width: 24 }}>
@@ -449,29 +445,7 @@ function generateDummy(col: string): unknown {
   return `${col}_${randInt(1, 100)}`;
 }
 
-/** Clickable column header that uses capture-phase to intercept before tldraw. */
-function ClickableHeader({ label, onClick }: { label: string; onClick: () => void }) {
-  const cleanupRef = useRef<(() => void) | null>(null);
-  const spanRef = useCallback((el: HTMLSpanElement | null) => {
-    if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
-    if (!el) return;
-    const handler = (e: PointerEvent) => {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      onClick();
-    };
-    el.addEventListener("pointerdown", handler, { capture: true });
-    cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
-  }, [onClick]);
-
-  return (
-    <span ref={spanRef} style={{ cursor: "pointer", display: "block", width: "100%" }}>
-      {label}
-    </span>
-  );
-}
-
-/** Column header rename input with capture-phase event interception. */
+/** Always-visible header input. Looks like a header label until focused. */
 function HeaderInput({ defaultValue, onCommit, onCancel }: {
   defaultValue: string;
   onCommit: (val: string) => void;
@@ -481,8 +455,6 @@ function HeaderInput({ defaultValue, onCommit, onCancel }: {
   const inputRef = useCallback((el: HTMLInputElement | null) => {
     if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
     if (!el) return;
-    el.focus();
-    el.select();
     const handler = (e: PointerEvent) => {
       e.stopPropagation();
       e.stopImmediatePropagation();
@@ -495,17 +467,29 @@ function HeaderInput({ defaultValue, onCommit, onCancel }: {
     <input
       ref={inputRef}
       defaultValue={defaultValue}
-      onBlur={(e) => onCommit(e.target.value)}
+      key={defaultValue}
+      onBlur={(e) => {
+        if (e.target.value !== defaultValue) onCommit(e.target.value);
+        e.target.style.background = "transparent";
+        e.target.style.border = "none";
+      }}
+      onFocus={(e) => {
+        e.target.style.background = "#1e3a5f";
+        e.target.style.border = "1px solid #3b82f6";
+        e.target.select();
+      }}
       onKeyDown={(e) => {
         e.stopPropagation();
-        if (e.key === "Enter") onCommit((e.target as HTMLInputElement).value);
-        if (e.key === "Escape") onCancel();
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") { onCancel(); (e.target as HTMLInputElement).blur(); }
       }}
       style={{
-        width: "100%", padding: "2px 4px",
-        background: "#1e3a5f", border: "1px solid #3b82f6",
-        borderRadius: 2, color: "#e2e8f0",
-        fontSize: 10, fontFamily: "inherit", outline: "none",
+        width: "100%", padding: "4px 6px",
+        background: "transparent", border: "none",
+        color: "#64748b", fontWeight: 600, fontSize: 10,
+        fontFamily: "inherit", outline: "none",
+        textTransform: "uppercase", letterSpacing: "0.03em",
+        boxSizing: "border-box",
       }}
     />
   );
