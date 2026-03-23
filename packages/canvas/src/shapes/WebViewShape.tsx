@@ -121,9 +121,26 @@ function WebViewContent({
     setActiveUrl(url);
   }
 
+  const normalizeUrl = (raw: string): string => {
+    let u = raw.trim();
+    if (!u) return "about:blank";
+    // If it looks like a domain (has a dot, no spaces), add https://
+    if (!u.startsWith("http://") && !u.startsWith("https://") && !u.startsWith("about:")) {
+      if (u.includes(".") && !u.includes(" ")) {
+        u = "https://" + u;
+      } else {
+        // Treat as search query
+        u = `https://www.google.com/search?igu=1&q=${encodeURIComponent(u)}`;
+      }
+    }
+    return u;
+  };
+
   const commitUrl = (newUrl: string) => {
-    setActiveUrl(newUrl);
-    editor.updateShape({ id: shapeId as any, type: "web-view", props: { url: newUrl } });
+    const normalized = normalizeUrl(newUrl);
+    setActiveUrl(normalized);
+    setLocalUrl(newUrl);
+    editor.updateShape({ id: shapeId as any, type: "web-view", props: { url: normalized } });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -131,6 +148,12 @@ function WebViewContent({
     if (e.key === "Enter") {
       commitUrl(localUrl);
     }
+  };
+
+  const refresh = () => {
+    // Force iframe reload by toggling src
+    setActiveUrl("about:blank");
+    setTimeout(() => setActiveUrl(normalizeUrl(localUrl)), 100);
   };
 
   const urlBarHeight = 32;
@@ -161,15 +184,12 @@ function WebViewContent({
           flexShrink: 0,
         }}
       >
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: "#06b6d4",
-            flexShrink: 0,
-          }}
-        />
+        <button
+          onClick={(e) => { e.stopPropagation(); refresh(); }}
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 12, padding: "0 2px", flexShrink: 0 }}
+          title="Refresh"
+        >↻</button>
         <input
           type="text"
           value={localUrl}
@@ -178,7 +198,7 @@ function WebViewContent({
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
           onBlur={() => { if (localUrl !== activeUrl) commitUrl(localUrl); }}
-          placeholder="https://example.com"
+          placeholder="Type URL or search..."
           style={{
             flex: 1,
             padding: "3px 8px",
