@@ -57,10 +57,30 @@ const SHAPE_TO_NODE_TYPE: Record<string, string> = {
   "terminal-node": "sys:terminal",
   "notebook-node": "sys:notebook",
   "ai-node": "data:ai",
+  "compact-node": "", // determined by nodeType prop
 };
 
 export function getNodeType(shapeType: string): string | undefined {
   return SHAPE_TO_NODE_TYPE[shapeType];
+}
+
+// ── Reverse: Runtime node type -> tldraw shape type ───────────────────────
+
+const NODE_TYPE_TO_SHAPE: Record<string, string> = {
+  "data:json": "data-node",
+  "data:table": "table-node",
+  "data:transform": "transform-node",
+  "data:ai": "ai-node",
+  "view:note": "note-node",
+  "view:svg-template": "view-node",
+  "view:webview": "web-view",
+  "sys:terminal": "terminal-node",
+  "sys:notebook": "notebook-node",
+  // Everything else -> compact-node
+};
+
+export function getShapeType(nodeType: string): string {
+  return NODE_TYPE_TO_SHAPE[nodeType] || "compact-node";
 }
 
 // ── Initial sync: tldraw shapes -> Runtime graph ───────────────────────────
@@ -77,14 +97,21 @@ export function syncShapesToRuntime(editor: Editor, runtime: Runtime): void {
   const shapes = editor.getCurrentPageShapes();
 
   for (const shape of shapes) {
-    const nodeType = SHAPE_TO_NODE_TYPE[shape.type];
+    let nodeType = SHAPE_TO_NODE_TYPE[shape.type];
+    if (nodeType === undefined) continue;
+
+    // For compact-node, the actual node type is stored in the shape props
+    const props = shape.props as Record<string, unknown>;
+    if (shape.type === "compact-node") {
+      nodeType = (props.nodeType as string) || "";
+      if (!nodeType) continue;
+    }
     if (!nodeType) continue;
 
     // Skip if this shape is already mapped (e.g. hot-reload)
     if (shapeToNode.has(shape.id)) continue;
 
     try {
-      const props = shape.props as Record<string, unknown>;
       const nodeId = runtime.graph.addNode(nodeType, { ...props });
 
       registerMapping(shape.id, nodeId);

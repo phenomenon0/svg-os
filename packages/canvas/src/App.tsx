@@ -19,14 +19,16 @@ import { TerminalNodeShapeUtil } from "./shapes/TerminalNodeShape";
 import { NoteNodeShapeUtil } from "./shapes/NoteNodeShape";
 import { NotebookNodeShapeUtil } from "./shapes/NotebookNodeShape";
 import { AINodeShapeUtil } from "./shapes/AINodeShape";
+import { CompactNodeShapeUtil } from "./shapes/CompactNodeShape";
 import { NodePalette } from "./NodePalette";
-import { ParameterPanel } from "./ParameterPanel";
+import { NodeInspector } from "./NodeInspector";
 import { AIChat } from "./AIChat";
 import { initWasm } from "./lib/wasm-bridge";
 import { wireReactiveEngine } from "./lib/reactive-engine";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import type { Runtime } from "@svg-os/core";
 import { RuntimeProvider, useRuntime } from "./RuntimeContext";
+import { CommandPalette } from "./CommandPalette";
 import {
   syncShapesToRuntime,
   syncEdgesToRuntime,
@@ -45,6 +47,7 @@ const customShapeUtils = [
   NoteNodeShapeUtil,
   NotebookNodeShapeUtil,
   AINodeShapeUtil,
+  CompactNodeShapeUtil,
 ];
 
 /**
@@ -133,12 +136,26 @@ function RuntimeBridge() {
 
 // Stable component reference to avoid remounting
 function CanvasOverlays() {
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCmdPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   return (
     <>
       <RuntimeBridge />
       <NodePalette />
-      <ParameterPanel />
+      <NodeInspector />
       <AIChat />
+      <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
     </>
   );
 }

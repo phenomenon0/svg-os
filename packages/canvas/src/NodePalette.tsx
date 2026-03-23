@@ -1,24 +1,115 @@
 /**
- * Node Palette — sidebar with 7 strong primitives + 2 plumbing nodes.
- * Settings modal for Claude API key configuration.
+ * NodePalette — sidebar driven by the Runtime's node type registry.
+ *
+ * Groups nodes by subsystem (System, Data, View) with search, recently-used,
+ * and collapsible sections. Settings modal preserved.
  */
 
 import { useEditor } from "tldraw";
-import { listNodeTypes, getNodeType, renderTemplateInline } from "@svg-os/bridge";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { listNodeTypes, getNodeType as bridgeGetNodeType, renderTemplateInline } from "@svg-os/bridge";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { getApiKey, setApiKey, getModel, setModel, testConnection } from "./lib/claude-api";
+import { useRuntime } from "./RuntimeContext";
 import { C, FONT } from "./theme";
 
-interface NodeTypeInfo {
-  id: string;
-  name: string;
-  category: string;
-  slots: Array<{ field: string; bind_type: string; target_attr: string }>;
-  default_width: number;
-  default_height: number;
+// ── Node descriptions ─────────────────────────────────────────────────────────
+
+const NODE_DESCRIPTIONS: Record<string, string> = {
+  "sys:file-open": "Open a file from disk",
+  "sys:file-write": "Save content to a file",
+  "sys:folder": "Browse a directory",
+  "sys:disk": "Storage usage info",
+  "sys:processes": "Runtime metrics & memory",
+  "sys:clipboard-read": "Read from clipboard",
+  "sys:clipboard-write": "Write to clipboard",
+  "sys:screen-capture": "Take a screenshot",
+  "sys:notify": "Send a notification",
+  "sys:network": "Network connection info",
+  "sys:geolocation": "GPS location",
+  "sys:terminal": "Code execution sandbox",
+  "sys:notebook": "Multi-cell notebook",
+  "sys:env": "Environment variables",
+  "data:json": "Static JSON source",
+  "data:table": "Tabular data editor",
+  "data:transform": "Expression transform",
+  "data:filter": "Filter an array",
+  "data:merge": "Merge two objects",
+  "data:fetch": "HTTP fetch",
+  "data:ai": "Claude AI completion",
+  "view:svg-template": "Rendered SVG template",
+  "view:note": "Markdown editor",
+  "view:webview": "Web browser iframe",
+  "view:metric": "Single value display",
+  "view:chart": "Data chart",
+};
+
+// ── Shape mapping ─────────────────────────────────────────────────────────────
+
+const NODE_TO_SHAPE: Record<string, string> = {
+  "sys:terminal": "terminal-node",
+  "sys:notebook": "notebook-node",
+  "data:json": "data-node",
+  "data:table": "table-node",
+  "data:transform": "transform-node",
+  "data:ai": "ai-node",
+  "view:note": "note-node",
+  "view:svg-template": "view-node",
+  "view:webview": "web-view",
+};
+
+// ── System sub-groups ─────────────────────────────────────────────────────────
+
+const SYSTEM_GROUPS = [
+  { label: "Files", types: ["sys:file-open", "sys:file-write", "sys:folder"] },
+  { label: "Hardware", types: ["sys:disk", "sys:processes", "sys:network", "sys:geolocation"] },
+  { label: "IO", types: ["sys:clipboard-read", "sys:clipboard-write", "sys:screen-capture", "sys:notify"] },
+  { label: "Runtime", types: ["sys:terminal", "sys:notebook", "sys:env"] },
+];
+
+// ── Subsystem colors ──────────────────────────────────────────────────────────
+
+function subsystemColor(type: string): string {
+  if (type.startsWith("sys:")) return C.green;
+  if (type.startsWith("data:")) return C.blue;
+  if (type.startsWith("view:")) return C.accent;
+  return C.muted;
 }
 
-// ── Dummy data for pre-rendered templates ────────────────────────────────────
+// ── Default props per shape type ──────────────────────────────────────────────
+
+function defaultPropsForShape(shapeType: string): Record<string, unknown> {
+  switch (shapeType) {
+    case "terminal-node":
+      return {
+        w: 400, h: 280, label: "Terminal", mode: "js",
+        history: JSON.stringify([
+          { type: "output", text: "SVG OS Terminal \u2014 JavaScript sandbox" },
+          { type: "output", text: "Type expressions, see results. Try: 1 + 1" },
+        ]),
+      };
+    case "notebook-node":
+      return {
+        w: 400, h: 320, label: "Notebook",
+        cells: JSON.stringify([{ id: "c1", type: "code", lang: "python", source: "print('Hello!')\n2 ** 10", output: "" }]),
+      };
+    case "data-node":
+      return { w: 300, h: 200, dataJson: '{\n  "name": "Example",\n  "score": 95\n}', label: "Data" };
+    case "table-node":
+      return { w: 320, h: 240, label: "Table", dataJson: "[]", selectedRow: -1, outputMode: "all" };
+    case "transform-node":
+      return { w: 180, h: 48, expression: "$.value", label: "Transform" };
+    case "ai-node":
+      return { w: 400, h: 320, label: "AI", prompt: "", response: "", model: getModel(), status: "idle", errorMessage: "" };
+    case "note-node":
+      return { w: 320, h: 240, label: "Note", content: "", mode: "edit" };
+    case "web-view":
+      return { w: 480, h: 360, url: "https://example.com", label: "WebView" };
+    default:
+      return { w: 300, h: 200, label: "Node" };
+  }
+}
+
+// ── Dummy data for pre-rendered SVG templates ─────────────────────────────────
 
 const TEMPLATE_DUMMY_DATA: Record<string, Record<string, string>> = {
   "hero-card": {
@@ -103,19 +194,47 @@ const TEMPLATE_DUMMY_DATA: Record<string, Record<string, string>> = {
   },
 };
 
+// ── Main Component ────────────────────────────────────────────────────────────
+
 export function NodePalette() {
   const editor = useEditor();
-  const [svgTemplates, setSvgTemplates] = useState<NodeTypeInfo[]>([]);
-  const [templatesOpen, setTemplatesOpen] = useState(false);
-  const [plumbingOpen, setPlumbingOpen] = useState(false);
+  const runtime = useRuntime();
+  const [search, setSearch] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [recentlyUsed, setRecentlyUsed] = useState<string[]>([]);
+
+  // Section collapse state
+  const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({
+    system: true,
+    data: true,
+    view: true,
+    templates: false,
+  });
+
+  const placementCount = useRef(0);
+  const offset = () => {
+    const i = placementCount.current++;
+    return { x: (i % 4) * 250 - 375, y: Math.floor(i / 4) * 200 - 100 };
+  };
+
+  // Load recently used from localStorage
+  useEffect(() => {
+    try {
+      const recent = JSON.parse(localStorage.getItem("svgos:recent-nodes") || "[]");
+      setRecentlyUsed(recent.slice(0, 3));
+    } catch { /* ignore */ }
+  }, []);
+
+  // ── SVG Templates from bridge ───────────────────────────────────────────
+
+  const [svgTemplates, setSvgTemplates] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       try {
         const t = listNodeTypes();
         if (t.length > 0) {
-          setSvgTemplates(t);
+          setSvgTemplates(t.map((x: any) => ({ id: x.id, name: x.name })));
           clearInterval(interval);
         }
       } catch { /* WASM not ready */ }
@@ -123,85 +242,44 @@ export function NodePalette() {
     return () => clearInterval(interval);
   }, []);
 
-  // ── Placement ───────────────────────────────────────────────────────────────
+  // ── Node types from runtime ─────────────────────────────────────────────
 
-  const placementCount = useRef(0);
-  const offset = () => {
-    const i = placementCount.current++;
-    return {
-      x: (i % 4) * 250 - 375,
-      y: Math.floor(i / 4) * 200 - 100,
-    };
-  };
+  const registeredTypes = useMemo(() => {
+    if (!runtime) return new Set<string>();
+    return new Set(runtime.listNodeDefs().map((d) => d.type));
+  }, [runtime]);
 
-  const placeNote = useCallback(() => {
+  // ── Placement helpers ───────────────────────────────────────────────────
+
+  const trackRecent = useCallback((nodeType: string) => {
+    setRecentlyUsed((prev) => {
+      const updated = [nodeType, ...prev.filter((r) => r !== nodeType)].slice(0, 3);
+      try { localStorage.setItem("svgos:recent-nodes", JSON.stringify(updated)); } catch { /* ignore */ }
+      return updated;
+    });
+  }, []);
+
+  const placeNode = useCallback((nodeType: string) => {
+    const shapeType = NODE_TO_SHAPE[nodeType];
+    if (!shapeType) return;
     const o = offset();
     const center = editor.getViewportScreenCenter();
+    const props = defaultPropsForShape(shapeType);
+    const w = (props.w as number) || 300;
+    const h = (props.h as number) || 200;
     editor.createShape({
-      type: "note-node",
-      x: center.x - 160 + o.x,
-      y: center.y - 120 + o.y,
-      props: { w: 320, h: 240, label: "Note", content: "", mode: "edit" },
+      type: shapeType,
+      x: center.x - w / 2 + o.x,
+      y: center.y - h / 2 + o.y,
+      props,
     });
-  }, [editor]);
-
-  const placeTable = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
-    editor.createShape({
-      type: "table-node",
-      x: center.x - 160 + o.x,
-      y: center.y - 120 + o.y,
-      props: { w: 320, h: 240, label: "Table", dataJson: "[]", selectedRow: -1, outputMode: "all" },
-    });
-  }, [editor]);
-
-  const placeNotebook = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
-    editor.createShape({
-      type: "notebook-node",
-      x: center.x - 200 + o.x,
-      y: center.y - 160 + o.y,
-      props: {
-        w: 400, h: 320, label: "Notebook",
-        cells: JSON.stringify([{ id: "c1", type: "code", lang: "python", source: "print('Hello from Python!')\n2 ** 10", output: "" }]),
-      },
-    });
-  }, [editor]);
-
-  const placeTerminal = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
-    editor.createShape({
-      type: "terminal-node",
-      x: center.x - 200 + o.x,
-      y: center.y - 140 + o.y,
-      props: {
-        w: 400, h: 280, label: "Terminal", mode: "js",
-        history: JSON.stringify([
-          { type: "output", text: "SVG OS Terminal \u2014 JavaScript sandbox" },
-          { type: "output", text: "Type expressions, see results. Try: 1 + 1" },
-        ]),
-      },
-    });
-  }, [editor]);
-
-  const placeWebView = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
-    editor.createShape({
-      type: "web-view",
-      x: center.x - 240 + o.x,
-      y: center.y - 180 + o.y,
-      props: { w: 480, h: 360, url: "https://example.com", label: "WebView" },
-    });
-  }, [editor]);
+    trackRecent(nodeType);
+  }, [editor, trackRecent]);
 
   const placeSvgView = useCallback((typeId: string) => {
     const o = offset();
     try {
-      const nt = getNodeType(typeId) as {
+      const nt = bridgeGetNodeType(typeId) as {
         template_svg: string;
         default_width: number;
         default_height: number;
@@ -212,7 +290,6 @@ export function NodePalette() {
       const h = nt.default_height * scale;
       const center = editor.getViewportScreenCenter();
 
-      // Pre-render with dummy data so it looks real
       const dummyData = TEMPLATE_DUMMY_DATA[typeId] || {};
       let rendered = nt.template_svg;
       if (Object.keys(dummyData).length > 0) {
@@ -232,52 +309,162 @@ export function NodePalette() {
           data: JSON.stringify(dummyData),
         },
       });
+      trackRecent(`tpl:${typeId}`);
     } catch (e) {
       console.error(`Failed to place ${typeId}:`, e);
     }
-  }, [editor]);
+  }, [editor, trackRecent]);
 
-  const placeAI = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
-    editor.createShape({
-      type: "ai-node",
-      x: center.x - 200 + o.x,
-      y: center.y - 160 + o.y,
-      props: {
-        w: 400, h: 320, label: "AI",
-        prompt: "", response: "",
-        model: getModel(),
-        status: "idle", errorMessage: "",
-      },
+  // ── Filter logic ────────────────────────────────────────────────────────
+
+  const q = search.toLowerCase().trim();
+
+  const matchesFilter = (nodeType: string, label?: string): boolean => {
+    if (!q) return true;
+    const desc = NODE_DESCRIPTIONS[nodeType] || "";
+    const name = label || nodeType;
+    return (
+      name.toLowerCase().includes(q) ||
+      desc.toLowerCase().includes(q) ||
+      nodeType.toLowerCase().includes(q)
+    );
+  };
+
+  const toggleSection = (key: string) =>
+    setSectionsOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  // Check if a node type has a shape (placeable)
+  const isPlaceable = (nodeType: string): boolean => !!NODE_TO_SHAPE[nodeType];
+
+  // ── Render helpers ──────────────────────────────────────────────────────
+
+  const renderDot = (color: string) => (
+    <span style={{
+      width: 7, height: 7, borderRadius: "50%",
+      background: color, flexShrink: 0,
+    }} />
+  );
+
+  const renderItem = (
+    nodeType: string,
+    label: string,
+    color: string,
+    onClick: () => void,
+    disabled?: boolean,
+  ) => (
+    <div
+      key={nodeType}
+      onClick={disabled ? undefined : onClick}
+      title={NODE_DESCRIPTIONS[nodeType] || ""}
+      style={{
+        padding: "6px 10px",
+        margin: "1px 0",
+        borderRadius: 5,
+        cursor: disabled ? "not-allowed" : "pointer",
+        fontSize: 12,
+        fontFamily: FONT.sans,
+        color: disabled ? C.dim : C.fgSoft,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        opacity: disabled ? 0.4 : 1,
+        transition: "background 0.12s ease",
+        letterSpacing: "0.01em",
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) e.currentTarget.style.background = C.bgHover;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
+    >
+      {renderDot(color)}
+      <span style={{
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        fontWeight: 400,
+      }}>
+        {label}
+      </span>
+    </div>
+  );
+
+  // ── Build section content ───────────────────────────────────────────────
+
+  // System section — sub-grouped
+  const systemNodes = SYSTEM_GROUPS.map((group) => {
+    const items = group.types.filter((t) => matchesFilter(t));
+    if (items.length === 0) return null;
+    return (
+      <div key={group.label}>
+        <div style={{
+          fontFamily: FONT.mono, fontSize: 9, color: C.dim,
+          textTransform: "uppercase", letterSpacing: "0.08em",
+          padding: "8px 10px 4px",
+        }}>
+          {group.label}
+        </div>
+        {items.map((t) => {
+          const placeable = isPlaceable(t);
+          const label = t.split(":")[1]?.replace(/-/g, " ") || t;
+          return renderItem(t, label, C.green, () => placeNode(t), !placeable);
+        })}
+      </div>
+    );
+  }).filter(Boolean);
+
+  // Data section
+  const dataTypes = ["data:json", "data:table", "data:transform", "data:filter", "data:merge", "data:fetch", "data:ai"];
+  const dataNodes = dataTypes
+    .filter((t) => matchesFilter(t))
+    .map((t) => {
+      const placeable = isPlaceable(t);
+      const label = t.split(":")[1]?.replace(/-/g, " ") || t;
+      return renderItem(t, label, C.blue, () => placeNode(t), !placeable);
     });
-  }, [editor]);
 
-  const placeDataNode = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
-    editor.createShape({
-      type: "data-node",
-      x: center.x - 80 + o.x,
-      y: center.y - 24 + o.y,
-      props: { w: 300, h: 200, dataJson: '{\n  "name": "Example",\n  "score": 95,\n  "tags": ["alpha", "beta"]\n}', label: "Data" },
+  // View section
+  const viewTypes = ["view:note", "view:webview", "view:metric", "view:chart"];
+  const viewNodes = viewTypes
+    .filter((t) => matchesFilter(t))
+    .map((t) => {
+      const placeable = isPlaceable(t);
+      const label = t.split(":")[1]?.replace(/-/g, " ") || t;
+      return renderItem(t, label, C.accent, () => placeNode(t), !placeable);
     });
-  }, [editor]);
 
-  const placeTransformNode = useCallback(() => {
-    const o = offset();
-    const center = editor.getViewportScreenCenter();
-    editor.createShape({
-      type: "transform-node",
-      x: center.x - 90 + o.x,
-      y: center.y - 24 + o.y,
-      props: { w: 180, h: 48, expression: "$.value", label: "Transform" },
-    });
-  }, [editor]);
+  // Templates section
+  const templateNodes = svgTemplates
+    .filter((t) => matchesFilter(`view:${t.id}`, t.name))
+    .map((t) =>
+      renderItem(`tpl:${t.id}`, t.name, C.cyan, () => placeSvgView(t.id)),
+    );
 
-  const templatesReady = svgTemplates.length > 0;
+  // Recently used
+  const recentItems = recentlyUsed
+    .filter((r) => matchesFilter(r))
+    .map((r) => {
+      if (r.startsWith("tpl:")) {
+        const tid = r.slice(4);
+        const tpl = svgTemplates.find((t) => t.id === tid);
+        if (!tpl) return null;
+        return renderItem(r, tpl.name, C.cyan, () => placeSvgView(tid));
+      }
+      const label = r.split(":")[1]?.replace(/-/g, " ") || r;
+      const color = subsystemColor(r);
+      const placeable = isPlaceable(r);
+      return renderItem(r, label, color, () => placeNode(r), !placeable);
+    })
+    .filter(Boolean);
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  const hasSystem = systemNodes.length > 0;
+  const hasData = dataNodes.length > 0;
+  const hasView = viewNodes.length > 0;
+  const hasTemplates = templateNodes.length > 0;
+  const hasRecent = recentItems.length > 0;
+
+  // ── Render ──────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -311,69 +498,124 @@ export function NodePalette() {
           </div>
         </div>
 
-        {/* Primitives */}
-        <div style={{ padding: "12px 8px", flex: 1 }}>
-          <SectionLabel text="Primitives" />
-
-          <PaletteItem svg={noteSvg} label="Note" color={C.note} onClick={placeNote} />
-          <PaletteItem svg={tableSvg} label="Table" color={C.table} onClick={placeTable} />
-          <PaletteItem svg={notebookSvg} label="Notebook" color={C.notebook} onClick={placeNotebook} />
-          <PaletteItem svg={terminalSvg} label="Terminal" color={C.terminal} onClick={placeTerminal} />
-          <PaletteItem svg={webviewSvg} label="WebView" color={C.webview} onClick={placeWebView} />
-          <PaletteItem svg={aiSvg} label="AI" color={C.ai} onClick={placeAI} />
-
-          {/* Templates */}
-          <div
-            onClick={() => setTemplatesOpen(!templatesOpen)}
+        {/* Search bar */}
+        <div style={{
+          padding: "8px 10px",
+          borderBottom: `1px solid ${C.borderSoft}`,
+        }}>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter nodes..."
             style={{
-              fontFamily: FONT.mono,
-              fontSize: 9,
-              fontWeight: 500,
-              color: C.faint,
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              padding: "16px 8px 6px",
-              cursor: "pointer",
-              userSelect: "none",
+              width: "100%",
+              padding: "6px 8px",
+              background: C.bgDeep,
+              border: `1px solid ${C.border}`,
+              borderRadius: 5,
+              color: C.fg,
+              fontSize: 11,
+              fontFamily: FONT.sans,
+              outline: "none",
+              letterSpacing: "0.01em",
+              transition: "border-color 0.15s ease",
             }}
-          >
-            {templatesOpen ? "\u25BC" : "\u25B6"} Templates {!templatesReady && <span style={{ color: C.dim }}>(loading)</span>}
-          </div>
-          {templatesOpen && templatesReady && (
+            onFocus={(e) => { e.currentTarget.style.borderColor = C.accent; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = C.border; }}
+          />
+        </div>
+
+        {/* Node sections */}
+        <div style={{ padding: "6px 4px", flex: 1, overflowY: "auto" }}>
+
+          {/* Blank node — place first, assign type later */}
+          {!q && (
+            <div
+              onClick={() => {
+                const o = offset();
+                const center = editor.getViewportScreenCenter();
+                editor.createShape({
+                  type: "compact-node",
+                  x: center.x - 90 + o.x,
+                  y: center.y - 24 + o.y,
+                  props: { w: 180, h: 48, label: "", nodeType: "", subsystem: "", configJson: "{}" },
+                });
+              }}
+              style={{
+                padding: "8px 10px", margin: "2px 4px 8px",
+                borderRadius: 6, cursor: "pointer",
+                border: `1px dashed ${C.faint}44`,
+                display: "flex", alignItems: "center", gap: 8,
+                fontSize: 12, color: C.muted,
+                fontFamily: FONT.sans,
+                transition: "background 0.12s, border-color 0.12s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = C.bgHover; e.currentTarget.style.borderColor = C.accent + "66"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = C.faint + "44"; }}
+            >
+              <span style={{ fontSize: 14, color: C.accent }}>+</span>
+              <span>New Node</span>
+            </div>
+          )}
+
+          {/* Recently Used */}
+          {hasRecent && !q && (
             <>
-              {svgTemplates.map(t => (
-                <PaletteItem
-                  key={t.id}
-                  svg={templateSvg}
-                  label={t.name}
-                  color={C.cyan}
-                  onClick={() => placeSvgView(t.id)}
-                />
-              ))}
+              <SectionHeader text="Recent" />
+              {recentItems}
             </>
           )}
 
-          {/* Plumbing */}
-          <div
-            onClick={() => setPlumbingOpen(!plumbingOpen)}
-            style={{
-              fontFamily: FONT.mono,
-              fontSize: 9,
-              fontWeight: 500,
-              color: C.faint,
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              padding: "16px 8px 6px",
-              cursor: "pointer",
-              userSelect: "none",
-            }}
-          >
-            {plumbingOpen ? "\u25BC" : "\u25B6"} Plumbing
-          </div>
-          {plumbingOpen && (
+          {/* System */}
+          {hasSystem && (
             <>
-              <PaletteItem svg={dataSvg} label="Data JSON" color={C.data} onClick={placeDataNode} />
-              <PaletteItem svg={exprSvg} label="Expression" color={C.transform} onClick={placeTransformNode} />
+              <CollapsibleHeader
+                text="System"
+                open={sectionsOpen.system}
+                onToggle={() => toggleSection("system")}
+                dotColor={C.green}
+              />
+              {sectionsOpen.system && systemNodes}
+            </>
+          )}
+
+          {/* Data */}
+          {hasData && (
+            <>
+              <CollapsibleHeader
+                text="Data"
+                open={sectionsOpen.data}
+                onToggle={() => toggleSection("data")}
+                dotColor={C.blue}
+              />
+              {sectionsOpen.data && dataNodes}
+            </>
+          )}
+
+          {/* View */}
+          {hasView && (
+            <>
+              <CollapsibleHeader
+                text="View"
+                open={sectionsOpen.view}
+                onToggle={() => toggleSection("view")}
+                dotColor={C.accent}
+              />
+              {sectionsOpen.view && viewNodes}
+            </>
+          )}
+
+          {/* Templates */}
+          {(hasTemplates || svgTemplates.length > 0) && (
+            <>
+              <CollapsibleHeader
+                text={`Templates${svgTemplates.length === 0 ? " (loading)" : ""}`}
+                open={sectionsOpen.templates}
+                onToggle={() => toggleSection("templates")}
+                dotColor={C.cyan}
+              />
+              {sectionsOpen.templates && templateNodes}
             </>
           )}
         </div>
@@ -423,9 +665,9 @@ export function NodePalette() {
   );
 }
 
-// ── SectionLabel ─────────────────────────────────────────────────────────────
+// ── SectionHeader (non-collapsible) ───────────────────────────────────────────
 
-function SectionLabel({ text }: { text: string }) {
+function SectionHeader({ text }: { text: string }) {
   return (
     <div style={{
       fontFamily: FONT.mono,
@@ -434,92 +676,54 @@ function SectionLabel({ text }: { text: string }) {
       color: C.faint,
       textTransform: "uppercase",
       letterSpacing: "0.1em",
-      padding: "0 8px 8px",
+      padding: "10px 10px 4px",
     }}>
       {text}
     </div>
   );
 }
 
-// ── PaletteItem ──────────────────────────────────────────────────────────────
+// ── CollapsibleHeader ─────────────────────────────────────────────────────────
 
-function PaletteItem({
-  svg,
-  label,
-  color,
-  onClick,
-  disabled,
+function CollapsibleHeader({
+  text,
+  open,
+  onToggle,
+  dotColor,
 }: {
-  svg: (c: string) => string;
-  label: string;
-  color: string;
-  onClick: () => void;
-  disabled?: boolean;
+  text: string;
+  open: boolean;
+  onToggle: () => void;
+  dotColor: string;
 }) {
   return (
     <div
-      onClick={disabled ? undefined : onClick}
+      onClick={onToggle}
       style={{
-        padding: "7px 10px",
-        margin: "1px 0",
-        borderRadius: 6,
-        cursor: disabled ? "not-allowed" : "pointer",
-        fontSize: 12,
-        fontFamily: FONT.sans,
-        color: disabled ? C.dim : C.fgSoft,
+        fontFamily: FONT.mono,
+        fontSize: 9,
+        fontWeight: 500,
+        color: C.faint,
+        textTransform: "uppercase",
+        letterSpacing: "0.1em",
+        padding: "12px 10px 4px",
+        cursor: "pointer",
+        userSelect: "none",
         display: "flex",
         alignItems: "center",
-        gap: 10,
-        opacity: disabled ? 0.4 : 1,
-        transition: "background 0.12s ease",
-        letterSpacing: "0.01em",
-      }}
-      onMouseEnter={(e) => {
-        if (!disabled) e.currentTarget.style.background = C.bgHover;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = "transparent";
+        gap: 6,
       }}
     >
-      <span
-        style={{ width: 16, height: 16, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-        dangerouslySetInnerHTML={{ __html: svg(color) }}
-      />
       <span style={{
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-        fontWeight: 400,
-      }}>
-        {label}
-      </span>
+        width: 6, height: 6, borderRadius: "50%",
+        background: dotColor, flexShrink: 0, opacity: 0.7,
+      }} />
+      <span>{open ? "\u25BC" : "\u25B6"} {text}</span>
     </div>
   );
 }
 
-// ── SVG Icons ────────────────────────────────────────────────────────────────
-
-const noteSvg = (c: string) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="12" rx="2" stroke="${c}" stroke-width="1.2"/><line x1="4" y1="4.5" x2="10" y2="4.5" stroke="${c}" stroke-width="1" opacity="0.6"/><line x1="4" y1="7" x2="10" y2="7" stroke="${c}" stroke-width="1" opacity="0.4"/><line x1="4" y1="9.5" x2="8" y2="9.5" stroke="${c}" stroke-width="1" opacity="0.3"/></svg>`;
-
-const tableSvg = (c: string) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="12" rx="2" stroke="${c}" stroke-width="1.2"/><line x1="1" y1="5" x2="13" y2="5" stroke="${c}" stroke-width="0.8" opacity="0.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="${c}" stroke-width="0.8" opacity="0.3"/><line x1="5" y1="5" x2="5" y2="13" stroke="${c}" stroke-width="0.8" opacity="0.3"/><line x1="9" y1="5" x2="9" y2="13" stroke="${c}" stroke-width="0.8" opacity="0.3"/></svg>`;
-
-const notebookSvg = (c: string) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="12" rx="2" stroke="${c}" stroke-width="1.2"/><rect x="3" y="3" width="8" height="3" rx="1" fill="${c}" opacity="0.2"/><rect x="3" y="8" width="8" height="3" rx="1" fill="${c}" opacity="0.12"/></svg>`;
-
-const terminalSvg = (c: string) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="12" rx="2" stroke="${c}" stroke-width="1.2"/><path d="M4 5L6.5 7L4 9" stroke="${c}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><line x1="7.5" y1="9" x2="10" y2="9" stroke="${c}" stroke-width="1.2" stroke-linecap="round" opacity="0.5"/></svg>`;
-
-const webviewSvg = (c: string) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="${c}" stroke-width="1.2"/><ellipse cx="7" cy="7" rx="2.5" ry="5.5" stroke="${c}" stroke-width="0.8" opacity="0.5"/><line x1="1.5" y1="7" x2="12.5" y2="7" stroke="${c}" stroke-width="0.8" opacity="0.4"/></svg>`;
-
-const shaderSvg = (c: string) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="12" rx="2" stroke="${c}" stroke-width="1.2"/><circle cx="5" cy="6" r="2" fill="${c}" opacity="0.3"/><circle cx="9" cy="8" r="2.5" fill="${c}" opacity="0.2"/></svg>`;
-
-const aiSvg = (c: string) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L8.5 5.5L12 7L8.5 8.5L7 12L5.5 8.5L2 7L5.5 5.5Z" stroke="${c}" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
-
-const dataSvg = (c: string) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="4" width="10" height="6" rx="3" stroke="${c}" stroke-width="1.2"/><circle cx="5" cy="7" r="1" fill="${c}" opacity="0.4"/><circle cx="9" cy="7" r="1" fill="${c}" opacity="0.4"/></svg>`;
-
-const exprSvg = (c: string) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 4L7 7L3 10" stroke="${c}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/><path d="M7 4L11 7L7 10" stroke="${c}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-
-const templateSvg = (c: string) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="12" rx="2" stroke="${c}" stroke-width="1.2"/><rect x="3" y="3" width="4" height="4" rx="1" fill="${c}" opacity="0.25"/><line x1="9" y1="4" x2="11" y2="4" stroke="${c}" stroke-width="0.8" opacity="0.4"/><line x1="9" y1="6" x2="11" y2="6" stroke="${c}" stroke-width="0.8" opacity="0.3"/><rect x="3" y="9" width="8" height="2" rx="0.5" fill="${c}" opacity="0.15"/></svg>`;
-
-// ── Settings Modal ───────────────────────────────────────────────────────────
+// ── Settings Modal ────────────────────────────────────────────────────────────
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const [apiKey, setApiKeyLocal] = useState(getApiKey());
