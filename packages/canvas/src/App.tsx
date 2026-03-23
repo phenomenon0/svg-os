@@ -8,6 +8,8 @@ import { Tldraw } from "tldraw";
 import { DataNodeShapeUtil } from "./shapes/DataNodeShape";
 import { TransformNodeShapeUtil } from "./shapes/TransformNodeShape";
 import { ViewNodeShapeUtil } from "./shapes/ViewNodeShape";
+import { TableNodeShapeUtil } from "./shapes/TableNodeShape";
+import { MultiplexerNodeShapeUtil } from "./shapes/MultiplexerNodeShape";
 import { NodePalette } from "./NodePalette";
 import { ParameterPanel } from "./ParameterPanel";
 import { initWasm } from "./lib/wasm-bridge";
@@ -18,6 +20,8 @@ const customShapeUtils = [
   DataNodeShapeUtil,
   TransformNodeShapeUtil,
   ViewNodeShapeUtil,
+  TableNodeShapeUtil,
+  MultiplexerNodeShapeUtil,
 ];
 
 // Stable component reference to avoid remounting

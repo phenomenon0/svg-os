@@ -134,6 +134,47 @@ export function NodePalette() {
     });
   }, [editor]);
 
+  const placeTableNode = useCallback(() => {
+    const o = offset();
+    const center = editor.getViewportScreenCenter();
+    editor.createShape({
+      type: "table-node",
+      x: center.x - 160 + o.x,
+      y: center.y - 120 + o.y,
+      props: {
+        w: 320, h: 240,
+        label: "Table",
+        dataJson: JSON.stringify([
+          { name: "Pedri", position: "CM", score: 92 },
+          { name: "Salah", position: "RW", score: 89 },
+          { name: "Haaland", position: "ST", score: 91 },
+          { name: "Rodri", position: "DM", score: 90 },
+          { name: "Bellingham", position: "AM", score: 88 },
+        ]),
+        selectedRow: -1,
+        filterExpr: "",
+        outputMode: "all",
+      },
+    });
+  }, [editor]);
+
+  const placeMultiplexerNode = useCallback(() => {
+    const o = offset();
+    const center = editor.getViewportScreenCenter();
+    editor.createShape({
+      type: "multiplexer-node",
+      x: center.x - 300 + o.x,
+      y: center.y - 150 + o.y,
+      props: {
+        w: 600, h: 300,
+        label: "Multiplexer",
+        templateId: "",
+        maxItems: 5,
+        inputDataJson: "[]",
+      },
+    });
+  }, [editor]);
+
   const placeSvgView = useCallback(
     (typeId: string) => {
       const o = offset();
@@ -247,6 +288,20 @@ export function NodePalette() {
             label="Static JSON"
             accent={SECTION_COLORS.data}
             onClick={placeDataNode}
+          />
+          <PaletteItem
+            icon="\uD83D\uDCCA"
+            label="Table"
+            sublabel="rows"
+            accent="#3b82f6"
+            onClick={placeTableNode}
+          />
+          <PaletteItem
+            icon="\u00D7"
+            label="Multiplexer"
+            sublabel="×N"
+            accent="#ec4899"
+            onClick={placeMultiplexerNode}
           />
         </div>
       )}
