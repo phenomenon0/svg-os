@@ -18,7 +18,8 @@ import { getNodeType, listNodeTypes, renderTemplateInline } from "@svg-os/bridge
 import { evalJS, resultToData } from "./eval-sandbox";
 
 // Node outputs are cached here between evaluations
-const nodeOutputs = new Map<string, Record<string, unknown>>();
+// Exported so EdgeInspector can read flowing data
+export const nodeOutputs = new Map<string, Record<string, unknown>>();
 
 // Adjacency: targetId -> [sourceIds]
 const dataFlowGraph = new Map<string, string[]>();
@@ -307,11 +308,24 @@ function evaluateNoteNode(
       return input[field] != null ? String(input[field]) : "";
     });
 
-    // If note is empty, show upstream data as formatted JSON
+    // If note is empty, show upstream data cleanly
     if (!rawContent.trim()) {
-      content = Object.entries(input)
-        .map(([k, v]) => `**${k}**: ${typeof v === "object" ? JSON.stringify(v) : v}`)
-        .join("\n\n");
+      // Prefer "value" field (common single-output pattern)
+      if (input.value !== undefined) {
+        content = String(input.value);
+      } else if (input.content !== undefined) {
+        content = String(input.content);
+      } else if (input.response !== undefined) {
+        content = String(input.response);
+      } else if (input.text !== undefined) {
+        content = String(input.text);
+      } else {
+        // Fallback: show as formatted key-value pairs
+        content = Object.entries(input)
+          .filter(([k]) => !k.startsWith("_"))
+          .map(([k, v]) => `**${k}**: ${typeof v === "object" ? JSON.stringify(v) : v}`)
+          .join("\n\n");
+      }
     }
 
     // WRITE BACK: update content + switch to preview to show result

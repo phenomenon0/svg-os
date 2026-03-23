@@ -66,20 +66,25 @@ export function NodeInspector() {
   const editor = useEditor();
   const runtime = useRuntime();
 
-  const selectedShape = useValue(
+  const selected = useValue(
     "selected shape",
     () => {
       const ids = editor.getSelectedShapeIds();
       if (ids.length !== 1) return null;
       const shape = editor.getShape(ids[0]);
       if (!shape) return null;
-      if (!NODE_SHAPE_TYPES.includes(shape.type as (typeof NODE_SHAPE_TYPES)[number])) return null;
       return shape;
     },
     [editor],
   );
 
-  if (!selectedShape) return null;
+  // Arrow selected → show EdgeInspector
+  if (selected?.type === "arrow") {
+    return <EdgeInspector editor={editor} arrowId={selected.id} />;
+  }
+
+  const selectedShape = selected;
+  if (!selectedShape || !NODE_SHAPE_TYPES.includes(selectedShape.type as (typeof NODE_SHAPE_TYPES)[number])) return null;
 
   // Resolve runtime node
   const runtimeNodeId = getNodeId(selectedShape.id);
@@ -640,4 +645,102 @@ function inferSubsystem(nodeType: string): string {
   if (nodeType.startsWith("data:")) return "data";
   if (nodeType.startsWith("view:")) return "view";
   return "system";
+}
+
+// ── Edge Inspector ───────────────────────────────────────────────────────────
+// Shows when an arrow is selected. Displays source→target info and available
+// data fields with toggles to filter what passes through.
+
+import { nodeOutputs } from "./lib/reactive-engine";
+
+function EdgeInspector({ editor, arrowId }: { editor: any; arrowId: string }) {
+  const bindings = editor.getBindingsFromShape(arrowId, "arrow");
+  const startBinding = bindings.find((b: any) => b.props?.terminal === "start");
+  const endBinding = bindings.find((b: any) => b.props?.terminal === "end");
+
+  const sourceShape = startBinding ? editor.getShape(startBinding.toId) : null;
+  const targetShape = endBinding ? editor.getShape(endBinding.toId) : null;
+
+  const sourceName = sourceShape
+    ? (sourceShape.props as any).label || sourceShape.type
+    : "?";
+  const targetName = targetShape
+    ? (targetShape.props as any).label || targetShape.type
+    : "?";
+
+  // Get the data currently flowing through this edge
+  const sourceOutput = sourceShape ? nodeOutputs.get(sourceShape.id) : null;
+  const fields = sourceOutput ? Object.entries(sourceOutput).filter(([k]) => !k.startsWith("_")) : [];
+
+  return (
+    <div style={{
+      position: "absolute", right: 0, top: 0, bottom: 0, width: 280,
+      background: C.bg, borderLeft: `1px solid ${C.border}`,
+      overflowY: "auto", zIndex: 1000, pointerEvents: "all",
+      fontFamily: FONT.sans, fontSize: 12, color: C.fg,
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: "14px 16px", borderBottom: `1px solid ${C.border}`,
+      }}>
+        <div style={{
+          fontFamily: FONT.mono, fontSize: 9, color: C.faint,
+          textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4,
+        }}>
+          Connection
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+          <span style={{ color: C.green }}>{sourceName}</span>
+          <span style={{ color: C.faint }}>{"\u2192"}</span>
+          <span style={{ color: C.accent }}>{targetName}</span>
+        </div>
+      </div>
+
+      {/* Data flowing */}
+      <div style={{ padding: "12px 16px" }}>
+        <div style={{
+          fontFamily: FONT.mono, fontSize: 9, color: C.faint,
+          textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8,
+        }}>
+          Data Flowing ({fields.length} fields)
+        </div>
+
+        {fields.length === 0 && (
+          <div style={{ color: C.dim, fontSize: 11, fontStyle: "italic" }}>
+            No data yet — run the source node first
+          </div>
+        )}
+
+        {fields.map(([key, val]) => (
+          <div key={key} style={{
+            padding: "6px 8px", marginBottom: 2,
+            borderRadius: 4, background: C.bgCard,
+            display: "flex", alignItems: "flex-start", gap: 8,
+          }}>
+            <span style={{
+              fontFamily: FONT.mono, fontSize: 11, color: C.accent,
+              minWidth: 60, flexShrink: 0,
+            }}>
+              {key}
+            </span>
+            <span style={{
+              fontSize: 11, color: C.fgSoft,
+              overflow: "hidden", textOverflow: "ellipsis",
+              whiteSpace: "nowrap", flex: 1,
+            }}>
+              {typeof val === "object" ? JSON.stringify(val) : String(val)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Tip */}
+      <div style={{
+        padding: "12px 16px", borderTop: `1px solid ${C.borderSoft}`,
+        fontSize: 10, color: C.dim, lineHeight: 1.5,
+      }}>
+        All fields pass through by default. Use a Transform node between to filter or reshape data.
+      </div>
+    </div>
+  );
 }
