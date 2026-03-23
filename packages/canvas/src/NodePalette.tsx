@@ -314,8 +314,8 @@ export function NodePalette() {
             onClick={placeTableNode}
           />
           <PaletteItem
-            icon="×"
-            label="Multiplexer"
+            icon="⊞"
+            label="Multi View"
             accent="#ec4899"
             onClick={placeMultiplexerNode}
           />
