@@ -333,7 +333,83 @@ function RuntimeBridge() {
 
 // Stable component reference to avoid remounting
 function CanvasOverlays() {
+  const editor = useEditor();
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+
+  // ── File drop handler (capture phase to intercept before tldraw) ────
+  useEffect(() => {
+    if (!editor) return;
+    let dragCount = 0;
+
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes("Files")) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!dragCount) setDragOver(true);
+        dragCount++;
+      }
+    };
+    const onDragLeave = (e: DragEvent) => {
+      dragCount = Math.max(0, dragCount - 1);
+      if (dragCount === 0) setDragOver(false);
+    };
+    const onDrop = async (e: DragEvent) => {
+      dragCount = 0;
+      setDragOver(false);
+      const file = e.dataTransfer?.files[0];
+      if (!file) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      const mime = file.type;
+
+      if (ext === "json" || mime === "application/json") {
+        const text = await file.text();
+        try { JSON.parse(text); editor.createShape({ type: "data-node", x: point.x - 150, y: point.y - 100, props: { w: 300, h: 200, label: file.name, dataJson: text } }); } catch {}
+        return;
+      }
+      if (ext === "csv" || ext === "tsv" || mime === "text/csv") {
+        const text = await file.text();
+        const rows = parseCSVToRows(text);
+        if (rows.length > 0) editor.createShape({ type: "table-node", x: point.x - 180, y: point.y - 120, props: { w: 400, h: 280, label: file.name, dataJson: JSON.stringify(rows), dataSource: "local" } });
+        return;
+      }
+      if (mime.startsWith("image/")) {
+        const dataUrl = await readFileAsDataUrl(file);
+        editor.createShape({ type: "media-node", x: point.x - 160, y: point.y - 130, props: { w: 320, h: 260, label: file.name.replace(/\.[^.]+$/, ""), mediaType: "image", src: dataUrl, filename: file.name, mimeType: mime, fileSize: file.size } });
+        return;
+      }
+      if (mime.startsWith("video/")) {
+        const dataUrl = await readFileAsDataUrl(file);
+        editor.createShape({ type: "media-node", x: point.x - 200, y: point.y - 150, props: { w: 400, h: 300, label: file.name.replace(/\.[^.]+$/, ""), mediaType: "video", src: dataUrl, filename: file.name, mimeType: mime, fileSize: file.size } });
+        return;
+      }
+      if (mime.startsWith("audio/")) {
+        const dataUrl = await readFileAsDataUrl(file);
+        editor.createShape({ type: "media-node", x: point.x - 160, y: point.y - 80, props: { w: 320, h: 160, label: file.name.replace(/\.[^.]+$/, ""), mediaType: "audio", src: dataUrl, filename: file.name, mimeType: mime, fileSize: file.size } });
+        return;
+      }
+      if (mime.startsWith("text/") || ["txt", "md", "yaml", "yml", "xml"].includes(ext)) {
+        const text = await file.text();
+        editor.createShape({ type: "data-node", x: point.x - 150, y: point.y - 100, props: { w: 300, h: 200, label: file.name, dataJson: JSON.stringify({ content: text, filename: file.name }) } });
+      }
+    };
+
+    // Capture phase: intercept BEFORE tldraw
+    document.addEventListener("dragover", onDragOver, { capture: true });
+    document.addEventListener("dragleave", onDragLeave, { capture: true });
+    document.addEventListener("drop", onDrop, { capture: true });
+    return () => {
+      document.removeEventListener("dragover", onDragOver, { capture: true });
+      document.removeEventListener("dragleave", onDragLeave, { capture: true });
+      document.removeEventListener("drop", onDrop, { capture: true });
+    };
+  }, [editor]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -346,8 +422,68 @@ function CanvasOverlays() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  const handleCanvasDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+
+    const file = e.dataTransfer.files[0];
+    if (!file || !editor) return;
+
+    const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    const mime = file.type;
+
+    if (ext === "json" || mime === "application/json") {
+      const text = await file.text();
+      try { JSON.parse(text); editor.createShape({ type: "data-node", x: point.x - 150, y: point.y - 100, props: { w: 300, h: 200, label: file.name, dataJson: text } }); } catch {}
+      return;
+    }
+    if (ext === "csv" || ext === "tsv" || mime === "text/csv") {
+      const text = await file.text();
+      const rows = parseCSVToRows(text);
+      if (rows.length > 0) editor.createShape({ type: "table-node", x: point.x - 180, y: point.y - 120, props: { w: 400, h: 280, label: file.name, dataJson: JSON.stringify(rows), dataSource: "local" } });
+      return;
+    }
+    if (mime.startsWith("image/")) {
+      const dataUrl = await readFileAsDataUrl(file);
+      editor.createShape({ type: "media-node", x: point.x - 160, y: point.y - 130, props: { w: 320, h: 260, label: file.name.replace(/\.[^.]+$/, ""), mediaType: "image", src: dataUrl, filename: file.name, mimeType: mime, fileSize: file.size } });
+      return;
+    }
+    if (mime.startsWith("video/")) {
+      const dataUrl = await readFileAsDataUrl(file);
+      editor.createShape({ type: "media-node", x: point.x - 200, y: point.y - 150, props: { w: 400, h: 300, label: file.name.replace(/\.[^.]+$/, ""), mediaType: "video", src: dataUrl, filename: file.name, mimeType: mime, fileSize: file.size } });
+      return;
+    }
+    if (mime.startsWith("audio/")) {
+      const dataUrl = await readFileAsDataUrl(file);
+      editor.createShape({ type: "media-node", x: point.x - 160, y: point.y - 80, props: { w: 320, h: 160, label: file.name.replace(/\.[^.]+$/, ""), mediaType: "audio", src: dataUrl, filename: file.name, mimeType: mime, fileSize: file.size } });
+      return;
+    }
+    // Fallback: text file → data node
+    if (mime.startsWith("text/") || ["txt", "md", "yaml", "yml", "xml"].includes(ext)) {
+      const text = await file.text();
+      editor.createShape({ type: "data-node", x: point.x - 150, y: point.y - 100, props: { w: 300, h: 200, label: file.name, dataJson: JSON.stringify({ content: text, filename: file.name }) } });
+    }
+  }, [editor]);
+
   return (
     <>
+      {/* Drop zone visual overlay */}
+      {dragOver && (
+        <div style={{
+          position: "absolute", inset: 8, zIndex: 9000,
+          background: "rgba(139, 92, 246, 0.06)",
+          border: "2px dashed rgba(139, 92, 246, 0.4)",
+          borderRadius: 12,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          pointerEvents: "none",
+        }}>
+          <span style={{ color: "#8b5cf6", fontSize: 14, fontFamily: "Inter, sans-serif", fontWeight: 500 }}>
+            Drop file to create node
+          </span>
+        </div>
+      )}
       <RuntimeBridge />
       <CollabOverlay />
       <NodePalette />
@@ -371,7 +507,7 @@ export function App() {
 
   return (
     <RuntimeProvider>
-      <CanvasDropZone>
+      <div style={{ position: "fixed", inset: 0 }}>
         {!wasmLoaded && (
           <div
             style={{
@@ -401,7 +537,7 @@ export function App() {
             editor.user.updateUserPreferences({ colorScheme: "dark" });
           }}
         />
-      </CanvasDropZone>
+      </div>
     </RuntimeProvider>
   );
 }
