@@ -305,7 +305,7 @@ function CellView({ cell, index, onRun, onDelete, onSourceChange, onToggleLang }
           if (e.key === "Enter" && (e.shiftKey || e.ctrlKey) && isCode) { e.preventDefault(); onRun(); }
         }}
         rows={Math.max(1, local.split("\n").length)}
-        placeholder={isCode ? `${getLangShort(cell.lang)} code...` : "Markdown..."}
+        placeholder=""
         style={{
           width: "100%", padding: "6px 8px", background: "transparent", border: "none",
           color: isCode ? C.fg : C.muted, fontSize: 12, resize: "none", outline: "none",
