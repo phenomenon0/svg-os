@@ -1,0 +1,18 @@
+[package]
+name = "svg-graph-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust-native graph execution engine for SVG OS"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+log = { workspace = true }
+tokio = { version = "1", features = ["sync", "time", "rt"] }
+async-trait = "0.1"
+rmp-serde = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }

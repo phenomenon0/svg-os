@@ -10,6 +10,9 @@ members = [
     "crates/svg-runtime",
     "crates/svg-wasm",
     "crates/svg-mcp",
+    "crates/svg-graph-engine",
+    "crates/svg-store",
+    "src-tauri",
 ]
 
 [workspace.package]
@@ -26,6 +29,8 @@ svg-text = { path = "crates/svg-text" }
 svg-effects = { path = "crates/svg-effects" }
 svg-layout = { path = "crates/svg-layout" }
 svg-runtime = { path = "crates/svg-runtime" }
+svg-graph-engine = { path = "crates/svg-graph-engine" }
+svg-store = { path = "crates/svg-store" }
 
 # Forge dependencies (local path — requires `forge` repo cloned as sibling directory)
 # To build: git clone <forge-repo-url> ../forge
