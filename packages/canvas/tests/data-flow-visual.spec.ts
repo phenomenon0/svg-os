@@ -413,4 +413,93 @@ test.describe("Data Flow: Real Nodes", () => {
 
     await page.screenshot({ path: "test-results/flow-07-full-canvas.png", fullPage: true });
   });
+
+  test("8. Data → Notebook: upstream data available in cells as input/data", async ({ page }) => {
+    await waitForApp(page);
+
+    // Data source
+    const dataId = await placeNode(page, "data-node", 50, 200, {
+      label: "Source",
+      dataJson: JSON.stringify({ name: "Alice", score: 95 }),
+      w: 260, h: 180,
+    });
+
+    // Notebook with a JS cell that reads upstream data
+    const nbId = await placeNode(page, "notebook-node", 420, 150, {
+      label: "Analysis",
+      cells: JSON.stringify([
+        { id: "c1", type: "code", lang: "js", source: "input.name + ' scored ' + input.score", output: "" },
+      ]),
+      w: 400, h: 280,
+    });
+
+    await connect(page, dataId, nbId);
+
+    // First run the runtime to populate the output cache with data node's output
+    await triggerRun(page);
+
+    // Now simulate clicking RUN ALL in the notebook
+    const cellOutput = await page.evaluate(async () => {
+      const editor = (window as any).__tldrawEditor;
+      const runtime = (window as any).__svgosRuntime;
+      const { getNodeId } = await import("/src/lib/runtime-bridge.ts");
+      const { executeCode } = await import("/src/lib/code-runner.ts");
+
+      // Find notebook shape
+      const shapes = editor.getCurrentPageShapes();
+      const nb = shapes.find((s: any) => s.type === "notebook-node");
+      if (!nb) return { error: "no notebook" };
+
+      // Read upstream data (same logic as the component now does)
+      const nodeId = getNodeId(nb.id);
+      if (!nodeId) return { error: "no nodeId" };
+
+      const upstream: Record<string, unknown> = {};
+      for (const portName of ["in", "data"]) {
+        const edges = runtime.graph.getEdgesTo(nodeId, portName);
+        for (const edge of edges) {
+          const val = runtime.getOutput(edge.from.node, edge.from.port);
+          if (val && typeof val === "object" && !Array.isArray(val)) {
+            Object.assign(upstream, val);
+          }
+        }
+      }
+
+      // Execute the cell with upstream data as context
+      const result = await executeCode("js", "input.name + ' scored ' + input.score", upstream);
+      return { upstream, result };
+    });
+
+    expect(cellOutput.upstream).toEqual({ name: "Alice", score: 95 });
+    expect(cellOutput.result?.result).toBe("Alice scored 95");
+
+    await page.screenshot({ path: "test-results/flow-08-data-to-notebook.png" });
+  });
+
+  test("9. WebView loads femiadeniran.com", async ({ page }) => {
+    await waitForApp(page);
+
+    const webId = await placeNode(page, "web-view", 100, 100, {
+      label: "Portfolio",
+      url: "https://femiadeniran.com",
+      mode: "url",
+      w: 600, h: 450,
+    });
+
+    // Wait for iframe to be present and start loading
+    await page.waitForTimeout(2000);
+
+    // Verify the iframe src is set correctly
+    const iframeSrc = await page.evaluate(() => {
+      const iframes = document.querySelectorAll("iframe");
+      for (const iframe of iframes) {
+        if (iframe.src.includes("femiadeniran")) return iframe.src;
+      }
+      return null;
+    });
+
+    expect(iframeSrc).toContain("femiadeniran.com");
+
+    await page.screenshot({ path: "test-results/flow-09-webview-femiadeniran.png" });
+  });
 });

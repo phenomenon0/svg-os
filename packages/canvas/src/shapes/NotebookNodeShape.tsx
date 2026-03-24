@@ -13,6 +13,8 @@ import { executeCode, SUPPORTED_LANGS, getLangShort, formatResult, type Lang } f
 import { TitleBar } from "../TitleBar";
 import { usePointerCapture } from "../hooks/usePointerCapture";
 import { C, FONT, nodeContainerStyle } from "../theme";
+import { useRuntime } from "../RuntimeContext";
+import { getNodeId } from "../lib/runtime-bridge";
 
 interface Cell {
   id: string;
@@ -94,6 +96,28 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
     });
   }, [editor, shape.id]);
 
+  // ── Read upstream data from connected nodes ─────────────────
+  const runtime = useRuntime();
+
+  const getUpstreamData = useCallback((): Record<string, unknown> => {
+    if (!runtime) return {};
+    const nodeId = getNodeId(shape.id);
+    if (!nodeId) return {};
+    const upstream: Record<string, unknown> = {};
+    for (const portName of ["in", "data"]) {
+      const edges = runtime.graph.getEdgesTo(nodeId, portName);
+      for (const edge of edges) {
+        const val = runtime.getOutput(edge.from.node, edge.from.port);
+        if (val && typeof val === "object" && !Array.isArray(val)) {
+          Object.assign(upstream, val);
+        } else if (val !== undefined) {
+          upstream.value = val;
+        }
+      }
+    }
+    return upstream;
+  }, [runtime, shape.id]);
+
   // ── Direct execution (not via Runtime) ──────────────────────
 
   const runCell = useCallback(async (cellId: string) => {
@@ -101,8 +125,8 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
     const idx = current.findIndex(c => c.id === cellId);
     if (idx === -1 || current[idx].type !== "code") return;
 
-    // Build context from earlier cells
-    const context: Record<string, unknown> = {};
+    // Build context: upstream data first, then earlier cell outputs
+    const context: Record<string, unknown> = { ...getUpstreamData() };
     for (let i = 0; i < idx; i++) {
       if (current[i].type === "code" && current[i].output) {
         try {
@@ -124,12 +148,12 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
     const updated = [...current];
     updated[idx] = { ...updated[idx], output: lines.join("\n") };
     commitCells(updated);
-  }, [commitCells]);
+  }, [commitCells, getUpstreamData]);
 
   const runAll = useCallback(async () => {
     setRunning(true);
     let cur = [...cellsRef.current];
-    const ctx: Record<string, unknown> = {};
+    const ctx: Record<string, unknown> = { ...getUpstreamData() };
 
     for (let i = 0; i < cur.length; i++) {
       if (cur[i].type !== "code") continue;
@@ -147,7 +171,7 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
 
     commitCells(cur);
     setRunning(false);
-  }, [commitCells]);
+  }, [commitCells, getUpstreamData]);
 
   // ── Cell CRUD ───────────────────────────────────────────────
 
