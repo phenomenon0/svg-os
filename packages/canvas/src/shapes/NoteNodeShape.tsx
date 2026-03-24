@@ -12,10 +12,11 @@ import {
   Vec,
   useEditor,
 } from "tldraw";
-import { useRef, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Port } from "../Port";
-import { EditableLabel } from "../EditableLabel";
-import { C, FONT, nodeContainerStyle, titleBarStyle } from "../theme";
+import { TitleBar } from "../TitleBar";
+import { usePointerCapture } from "../hooks/usePointerCapture";
+import { C, FONT, nodeContainerStyle } from "../theme";
 
 export type NoteNodeShape = TLBaseShape<
   "note-node",
@@ -97,25 +98,12 @@ function NoteComponent({ shape }: { shape: NoteNodeShape }) {
     });
   }, [editor, shape.id, mode]);
 
-  const cleanupRef = useRef<(() => void) | null>(null);
-  const textareaRef = useCallback((el: HTMLTextAreaElement | null) => {
-    if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
-    if (!el) return;
-    const handler = (e: PointerEvent) => { e.stopPropagation(); e.stopImmediatePropagation(); };
-    el.addEventListener("pointerdown", handler, { capture: true });
-    cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
-  }, []);
+  const textareaRef = usePointerCapture<HTMLTextAreaElement>();
 
   return (
     <HTMLContainer style={{ width: w, height: h, pointerEvents: "all" }}>
       <div style={nodeContainerStyle}>
-        <div style={titleBarStyle}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.note, flexShrink: 0 }} />
-          <EditableLabel
-            value={label}
-            onChange={(v) => editor.updateShape({ id: shape.id, type: "note-node", props: { label: v } })}
-          />
-          <span style={{ flex: 1 }} />
+        <TitleBar label={label} color={C.note} onChange={(v) => editor.updateShape({ id: shape.id, type: "note-node", props: { label: v } })}>
           <button
             onClick={(e) => { e.stopPropagation(); toggleMode(); }}
             onPointerDown={(e) => e.stopPropagation()}
@@ -134,7 +122,7 @@ function NoteComponent({ shape }: { shape: NoteNodeShape }) {
           >
             {mode === "edit" ? "Preview" : "Edit"}
           </button>
-        </div>
+        </TitleBar>
 
         {mode === "edit" ? (
           <textarea
@@ -164,8 +152,8 @@ function NoteComponent({ shape }: { shape: NoteNodeShape }) {
           />
         )}
 
-        <Port side="left" type="data" name="data" shapeId={shape.id} />
-        <Port side="right" type="text" name="text" shapeId={shape.id} />
+        <Port side="left" type="any" name="in" shapeId={shape.id} />
+        <Port side="right" type="any" name="out" shapeId={shape.id} />
       </div>
     </HTMLContainer>
   );

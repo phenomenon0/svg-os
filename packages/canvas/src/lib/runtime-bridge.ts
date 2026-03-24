@@ -286,7 +286,8 @@ function buildShapePatch(
 
   if (nodeType === "sys:terminal") {
     const history = typeof data.history === "string" ? data.history : (shape.props.history as string);
-    if (history !== shape.props.history) {
+    // Don't overwrite welcome message with empty runtime output
+    if (history && history !== "[]" && history !== shape.props.history) {
       return { history };
     }
     return null;
@@ -294,7 +295,25 @@ function buildShapePatch(
 
   if (nodeType === "sys:notebook") {
     const nextStatus = status === "running" ? "running" : "idle";
-    const nextCells = typeof data.cells === "string" ? data.cells : shape.props.cells;
+
+    // Only update cell outputs from runtime, never overwrite cell structure.
+    // The notebook component manages cell add/delete/reorder directly.
+    let nextCells = shape.props.cells;
+    if (typeof data.cells === "string") {
+      try {
+        const runtimeCells = JSON.parse(data.cells) as Array<{ id: string; output?: string }>;
+        const currentCells = JSON.parse(shape.props.cells) as Array<{ id: string; output?: string }>;
+        // Merge outputs from runtime into current cells (preserving structure)
+        const outputMap = new Map(runtimeCells.map(c => [c.id, c.output]));
+        const merged = currentCells.map(c => {
+          const runtimeOutput = outputMap.get(c.id);
+          return runtimeOutput !== undefined ? { ...c, output: runtimeOutput } : c;
+        });
+        nextCells = JSON.stringify(merged);
+      } catch {
+        // If parsing fails, keep current cells
+      }
+    }
 
     if (nextCells !== shape.props.cells || nextStatus !== shape.props.status) {
       return {
@@ -358,15 +377,46 @@ function resolvePortName(
   knownPorts: string[],
   direction: "input" | "output",
 ): string | undefined {
+  if (knownPorts.length === 0) return undefined;
+
+  // Best case: explicit port name in binding metadata
   const portName = binding.props.portName;
   if (typeof portName === "string" && knownPorts.includes(portName)) {
     return portName;
   }
 
+  // Infer from binding terminal: "start" = output side, "end" = input side
+  const terminal = binding.props.terminal;
+  if (typeof terminal === "string") {
+    const isCorrectSide =
+      (direction === "output" && terminal === "start") ||
+      (direction === "input" && terminal === "end");
+    if (isCorrectSide && knownPorts.length === 1) {
+      return knownPorts[0];
+    }
+  }
+
+  // Infer from portSide metadata
   if (binding.props.portSide === (direction === "output" ? "right" : "left")) {
+    if (knownPorts.length === 1) return knownPorts[0];
+  }
+
+  // Single-port nodes: unambiguous, just use the only port
+  if (knownPorts.length === 1) {
     return knownPorts[0];
   }
 
+  // Universal defaults: "out" for output, "in" for input
+  const universalDefault = direction === "output" ? "out" : "in";
+  if (knownPorts.includes(universalDefault)) {
+    return universalDefault;
+  }
+
+  // Multi-port node with no metadata: fallback with warning
+  console.warn(
+    `[svg-os] resolvePortName: cannot determine ${direction} port for binding (toId=${binding.toId}). ` +
+    `Known ports: [${knownPorts.join(", ")}]. Falling back to "${knownPorts[0]}".`,
+  );
   return knownPorts[0];
 }
 

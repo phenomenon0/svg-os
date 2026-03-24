@@ -12,7 +12,7 @@ export interface EvalResult {
 
 /**
  * Execute JavaScript code in a sandboxed Function scope.
- * Optionally receives input data accessible as `$` and `data` variables.
+ * Optionally receives input data accessible as `input`, `$`, and `data` variables.
  */
 export function evalJS(code: string, input?: Record<string, unknown>): EvalResult {
   const logs: string[] = [];
@@ -26,7 +26,7 @@ export function evalJS(code: string, input?: Record<string, unknown>): EvalResul
 
   try {
     // Build the function body with input data injected as variables
-    const dataSetup = input ? `const $ = ${JSON.stringify(input)}; const data = $;` : "";
+    const dataSetup = input ? `const input = ${JSON.stringify(input)}; const $ = input; const data = input;` : "";
 
     // Try as expression first (returns a value)
     try {

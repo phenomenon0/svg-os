@@ -22,8 +22,9 @@ const fileHandleStore = new Map<string, FileSystemFileHandle>();
 const fileOpenNodeDef: NodeDef = {
   type: "sys:file-open",
   subsystem: "system",
-  inputs: [],
+  inputs: [{ name: "in", type: "any", optional: true }],
   outputs: [
+    { name: "out", type: "any" },
     { name: "content", type: "text" },
     { name: "meta", type: "data" },
   ],
@@ -31,6 +32,7 @@ const fileOpenNodeDef: NodeDef = {
   async execute(ctx: ExecContext, nodeId: NodeId) {
     const handle = fileHandleStore.get(nodeId);
     if (!handle) {
+      ctx.setOutput(nodeId, "out", "");
       ctx.setOutput(nodeId, "content", "");
       ctx.setOutput(nodeId, "meta", { error: "No file selected. Use the picker." });
       return;
@@ -39,14 +41,17 @@ const fileOpenNodeDef: NodeDef = {
     try {
       const file = await handle.getFile();
       const text = await file.text();
-      ctx.setOutput(nodeId, "content", text);
-      ctx.setOutput(nodeId, "meta", {
+      const meta = {
         name: file.name,
         size: file.size,
         type: file.type || "text/plain",
         lastModified: file.lastModified,
-      });
+      };
+      ctx.setOutput(nodeId, "out", text);
+      ctx.setOutput(nodeId, "content", text);
+      ctx.setOutput(nodeId, "meta", meta);
     } catch (err) {
+      ctx.setOutput(nodeId, "out", "");
       ctx.setOutput(nodeId, "content", "");
       ctx.setOutput(nodeId, "meta", {
         error: err instanceof Error ? err.message : String(err),
@@ -76,16 +81,19 @@ const fileWriteNodeDef: NodeDef = {
   type: "sys:file-write",
   subsystem: "system",
   inputs: [
-    { name: "content", type: "text" },
+    { name: "in", type: "any", optional: true },
+    { name: "content", type: "text", optional: true },
     { name: "filename", type: "text", optional: true },
   ],
   outputs: [
+    { name: "out", type: "any" },
     { name: "ok", type: "boolean" },
     { name: "meta", type: "data" },
   ],
   capabilities: [{ subsystem: "system", action: "fs", scope: "write" }],
   async execute(ctx: ExecContext, nodeId: NodeId) {
-    const content = (ctx.getInput(nodeId, "content") as string) || "";
+    const upstream = ctx.getInput(nodeId, "in") as string | undefined;
+    const content = (ctx.getInput(nodeId, "content") as string) || upstream || "";
     const config = ctx.getConfig(nodeId);
     const filename = (ctx.getInput(nodeId, "filename") as string) || (config.filename as string) || "untitled.txt";
 
@@ -99,9 +107,11 @@ const fileWriteNodeDef: NodeDef = {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
+        ctx.setOutput(nodeId, "out", { ok: true, method: "download", filename });
         ctx.setOutput(nodeId, "ok", true);
         ctx.setOutput(nodeId, "meta", { method: "download", filename });
       } catch (err) {
+        ctx.setOutput(nodeId, "out", { ok: false, error: err instanceof Error ? err.message : String(err) });
         ctx.setOutput(nodeId, "ok", false);
         ctx.setOutput(nodeId, "meta", { error: err instanceof Error ? err.message : String(err) });
       }
@@ -115,9 +125,11 @@ const fileWriteNodeDef: NodeDef = {
       const writable = await handle.createWritable();
       await writable.write(content);
       await writable.close();
+      ctx.setOutput(nodeId, "out", { ok: true, name: handle.name, method: "filesystem" });
       ctx.setOutput(nodeId, "ok", true);
       ctx.setOutput(nodeId, "meta", { name: handle.name, method: "filesystem" });
     } catch (err) {
+      ctx.setOutput(nodeId, "out", { ok: false, error: err instanceof Error ? err.message : String(err) });
       ctx.setOutput(nodeId, "ok", false);
       ctx.setOutput(nodeId, "meta", { error: err instanceof Error ? err.message : String(err) });
     }
@@ -132,8 +144,9 @@ const dirHandleStore = new Map<string, FileSystemDirectoryHandle>();
 const folderNodeDef: NodeDef = {
   type: "sys:folder",
   subsystem: "system",
-  inputs: [],
+  inputs: [{ name: "in", type: "any", optional: true }],
   outputs: [
+    { name: "out", type: "any" },
     { name: "entries", type: "array" },
     { name: "meta", type: "data" },
   ],
@@ -141,6 +154,7 @@ const folderNodeDef: NodeDef = {
   async execute(ctx: ExecContext, nodeId: NodeId) {
     const handle = dirHandleStore.get(nodeId);
     if (!handle) {
+      ctx.setOutput(nodeId, "out", []);
       ctx.setOutput(nodeId, "entries", []);
       ctx.setOutput(nodeId, "meta", { error: "No folder selected. Use the picker." });
       return;
@@ -168,14 +182,17 @@ const folderNodeDef: NodeDef = {
         return a.name.localeCompare(b.name);
       });
 
-      ctx.setOutput(nodeId, "entries", entries);
-      ctx.setOutput(nodeId, "meta", {
+      const meta = {
         name: handle.name,
         count: entries.length,
         files: entries.filter(e => e.kind === "file").length,
         folders: entries.filter(e => e.kind === "directory").length,
-      });
+      };
+      ctx.setOutput(nodeId, "out", entries);
+      ctx.setOutput(nodeId, "entries", entries);
+      ctx.setOutput(nodeId, "meta", meta);
     } catch (err) {
+      ctx.setOutput(nodeId, "out", []);
       ctx.setOutput(nodeId, "entries", []);
       ctx.setOutput(nodeId, "meta", {
         error: err instanceof Error ? err.message : String(err),
@@ -201,8 +218,9 @@ export async function pickFolder(nodeId: string): Promise<{ name: string } | nul
 const diskNodeDef: NodeDef = {
   type: "sys:disk",
   subsystem: "system",
-  inputs: [],
+  inputs: [{ name: "in", type: "any", optional: true }],
   outputs: [
+    { name: "out", type: "any" },
     { name: "info", type: "data" },
   ],
   async execute(ctx: ExecContext, nodeId: NodeId) {
@@ -211,7 +229,7 @@ const diskNodeDef: NodeDef = {
         const estimate = await navigator.storage.estimate();
         const used = estimate.usage || 0;
         const total = estimate.quota || 0;
-        ctx.setOutput(nodeId, "info", {
+        const info = {
           used,
           total,
           free: total - used,
@@ -220,14 +238,20 @@ const diskNodeDef: NodeDef = {
           freeMB: Math.round((total - used) / 1024 / 1024),
           percent: total > 0 ? Math.round((used / total) * 100) : 0,
           persisted: await navigator.storage.persisted?.() || false,
-        });
+        };
+        ctx.setOutput(nodeId, "out", info);
+        ctx.setOutput(nodeId, "info", info);
       } else {
-        ctx.setOutput(nodeId, "info", { error: "Storage API not available" });
+        const err = { error: "Storage API not available" };
+        ctx.setOutput(nodeId, "out", err);
+        ctx.setOutput(nodeId, "info", err);
       }
     } catch (err) {
-      ctx.setOutput(nodeId, "info", {
+      const errResult = {
         error: err instanceof Error ? err.message : String(err),
-      });
+      };
+      ctx.setOutput(nodeId, "out", errResult);
+      ctx.setOutput(nodeId, "info", errResult);
     }
   },
 };
@@ -239,8 +263,9 @@ const diskNodeDef: NodeDef = {
 const processNodeDef: NodeDef = {
   type: "sys:processes",
   subsystem: "system",
-  inputs: [],
+  inputs: [{ name: "in", type: "any", optional: true }],
   outputs: [
+    { name: "out", type: "any" },
     { name: "list", type: "array" },
     { name: "stats", type: "data" },
   ],
@@ -249,7 +274,7 @@ const processNodeDef: NodeDef = {
     const perf = typeof performance !== "undefined" ? performance : null;
     const memory = (perf as any)?.memory;
 
-    ctx.setOutput(nodeId, "stats", {
+    const stats = {
       uptime: perf ? Math.round(perf.now() / 1000) : 0,
       heapUsedMB: memory ? Math.round(memory.usedJSHeapSize / 1024 / 1024) : null,
       heapTotalMB: memory ? Math.round(memory.totalJSHeapSize / 1024 / 1024) : null,
@@ -257,11 +282,10 @@ const processNodeDef: NodeDef = {
       hardwareConcurrency: typeof navigator !== "undefined" ? navigator.hardwareConcurrency : null,
       userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
       timestamp: Date.now(),
-    });
+    };
 
-    // The "process list" is a snapshot of the caller — in future,
-    // this will list all Runtime graph nodes with their execution status.
-    // For now, output a placeholder.
+    ctx.setOutput(nodeId, "out", stats);
+    ctx.setOutput(nodeId, "stats", stats);
     ctx.setOutput(nodeId, "list", []);
   },
 };
@@ -271,8 +295,12 @@ const processNodeDef: NodeDef = {
 const terminalNodeDef: NodeDef = {
   type: "sys:terminal",
   subsystem: "system",
-  inputs: [{ name: "stdin", type: "text", optional: true }],
+  inputs: [
+    { name: "in", type: "any", optional: true },
+    { name: "stdin", type: "text", optional: true },
+  ],
   outputs: [
+    { name: "out", type: "any" },
     { name: "stdout", type: "text" },
     { name: "result", type: "data" },
     { name: "history", type: "text" },
@@ -281,9 +309,11 @@ const terminalNodeDef: NodeDef = {
   execution: { mode: "exclusive", concurrencyKey: "system:terminal" },
   async execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
-    const stdin = ctx.getInput(nodeId, "stdin");
+    const upstream = ctx.getInput(nodeId, "in");
+    const stdin = ctx.getInput(nodeId, "stdin") ?? upstream;
     const { history, stdout, result } = await executeTerminal(nodeId, config, stdin);
 
+    ctx.setOutput(nodeId, "out", result);
     ctx.setOutput(nodeId, "history", JSON.stringify(history));
     ctx.setOutput(nodeId, "stdout", stdout);
     ctx.setOutput(nodeId, "result", result);
@@ -295,27 +325,45 @@ const terminalNodeDef: NodeDef = {
 const notebookNodeDef: NodeDef = {
   type: "sys:notebook",
   subsystem: "system",
-  inputs: [{ name: "data", type: "data", optional: true }],
+  inputs: [
+    { name: "in", type: "any", optional: true },
+    { name: "data", type: "data", optional: true },
+  ],
   outputs: [
+    { name: "out", type: "any" },
     { name: "all", type: "data" },
     { name: "cells", type: "text" },
   ],
   capabilities: [{ subsystem: "system", action: "execute" }],
   execution: { mode: "exclusive", concurrencyKey: "system:notebook" },
   async execute(ctx: ExecContext, nodeId: NodeId) {
+    // Notebook execution is driven by the UI (run button / Shift+Enter),
+    // NOT by the runtime scheduler. The scheduler would auto-eval cells
+    // on every graph change, which is unwanted. We only pass through
+    // the current cells so ports stay wired.
     const config = ctx.getConfig(nodeId);
-    const upstreamData = ctx.getInput(nodeId, "data");
+    const cellsRaw = typeof config.cells === "string" ? config.cells : "[]";
+    ctx.setOutput(nodeId, "cells", cellsRaw);
 
-    if (upstreamData && typeof upstreamData === "object" && upstreamData !== null) {
-      config.data = upstreamData;
-    }
-
-    const { cells, allOutputs, cellOutputs } = await executeNotebook(config);
-    ctx.setOutput(nodeId, "cells", JSON.stringify(cells));
-    ctx.setOutput(nodeId, "all", allOutputs);
-
-    for (const [portName, value] of Object.entries(cellOutputs)) {
-      ctx.setOutput(nodeId, portName, value);
+    // Parse cell outputs for port wiring without re-executing
+    try {
+      const cells = JSON.parse(cellsRaw) as Array<{ id: string; type: string; output?: string }>;
+      const allOutputs: Record<string, unknown> = {};
+      for (let i = 0; i < cells.length; i++) {
+        if (cells[i].type === "code" && cells[i].output) {
+          try {
+            const parsed = JSON.parse(cells[i].output!);
+            if (typeof parsed === "object" && parsed !== null) Object.assign(allOutputs, parsed);
+            else allOutputs[`cell${i}`] = parsed;
+          } catch { allOutputs[`cell${i}`] = cells[i].output; }
+          ctx.setOutput(nodeId, `cell:${i}`, allOutputs[`cell${i}`] ?? cells[i].output);
+        }
+      }
+      ctx.setOutput(nodeId, "out", allOutputs);
+      ctx.setOutput(nodeId, "all", allOutputs);
+    } catch {
+      ctx.setOutput(nodeId, "out", {});
+      ctx.setOutput(nodeId, "all", {});
     }
   },
 };
@@ -326,8 +374,9 @@ const notebookNodeDef: NodeDef = {
 const clipboardReadNodeDef: NodeDef = {
   type: "sys:clipboard-read",
   subsystem: "system",
-  inputs: [],
+  inputs: [{ name: "in", type: "any", optional: true }],
   outputs: [
+    { name: "out", type: "any" },
     { name: "text", type: "text" },
     { name: "items", type: "array" },
   ],
@@ -335,6 +384,7 @@ const clipboardReadNodeDef: NodeDef = {
   async execute(ctx: ExecContext, nodeId: NodeId) {
     try {
       const text = await navigator.clipboard.readText();
+      ctx.setOutput(nodeId, "out", text);
       ctx.setOutput(nodeId, "text", text);
 
       // Try to read all clipboard items (images, etc.)
@@ -351,6 +401,7 @@ const clipboardReadNodeDef: NodeDef = {
 
       ctx.setOutput(nodeId, "items", items);
     } catch (err) {
+      ctx.setOutput(nodeId, "out", "");
       ctx.setOutput(nodeId, "text", "");
       ctx.setOutput(nodeId, "items", [{ type: "error", size: 0 }]);
     }
@@ -360,15 +411,24 @@ const clipboardReadNodeDef: NodeDef = {
 const clipboardWriteNodeDef: NodeDef = {
   type: "sys:clipboard-write",
   subsystem: "system",
-  inputs: [{ name: "text", type: "text" }],
-  outputs: [{ name: "ok", type: "boolean" }],
+  inputs: [
+    { name: "in", type: "any", optional: true },
+    { name: "text", type: "text", optional: true },
+  ],
+  outputs: [
+    { name: "out", type: "any" },
+    { name: "ok", type: "boolean" },
+  ],
   capabilities: [{ subsystem: "system", action: "write" }],
   async execute(ctx: ExecContext, nodeId: NodeId) {
-    const text = (ctx.getInput(nodeId, "text") as string) || "";
+    const upstream = ctx.getInput(nodeId, "in") as string | undefined;
+    const text = (ctx.getInput(nodeId, "text") as string) || upstream || "";
     try {
       await navigator.clipboard.writeText(text);
+      ctx.setOutput(nodeId, "out", true);
       ctx.setOutput(nodeId, "ok", true);
     } catch {
+      ctx.setOutput(nodeId, "out", false);
       ctx.setOutput(nodeId, "ok", false);
     }
   },
@@ -382,8 +442,9 @@ const screenCaptureStore = new Map<string, string>(); // nodeId -> base64 data U
 const screenCaptureNodeDef: NodeDef = {
   type: "sys:screen-capture",
   subsystem: "system",
-  inputs: [],
+  inputs: [{ name: "in", type: "any", optional: true }],
   outputs: [
+    { name: "out", type: "any" },
     { name: "image", type: "image" },
     { name: "meta", type: "data" },
   ],
@@ -391,10 +452,12 @@ const screenCaptureNodeDef: NodeDef = {
   async execute(ctx: ExecContext, nodeId: NodeId) {
     const existing = screenCaptureStore.get(nodeId);
     if (existing) {
+      ctx.setOutput(nodeId, "out", existing);
       ctx.setOutput(nodeId, "image", existing);
       ctx.setOutput(nodeId, "meta", { status: "cached" });
       return;
     }
+    ctx.setOutput(nodeId, "out", "");
     ctx.setOutput(nodeId, "image", "");
     ctx.setOutput(nodeId, "meta", { status: "Use captureScreen() to take a screenshot" });
   },
@@ -428,31 +491,41 @@ const notifyNodeDef: NodeDef = {
   type: "sys:notify",
   subsystem: "system",
   inputs: [
-    { name: "title", type: "text" },
+    { name: "in", type: "any", optional: true },
+    { name: "title", type: "text", optional: true },
     { name: "body", type: "text", optional: true },
   ],
-  outputs: [{ name: "ok", type: "boolean" }],
+  outputs: [
+    { name: "out", type: "any" },
+    { name: "ok", type: "boolean" },
+  ],
   async execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
-    const title = (ctx.getInput(nodeId, "title") as string) || (config.title as string) || "SVG OS";
+    const upstream = ctx.getInput(nodeId, "in") as string | undefined;
+    const title = (ctx.getInput(nodeId, "title") as string) || upstream || (config.title as string) || "SVG OS";
     const body = (ctx.getInput(nodeId, "body") as string) || (config.body as string) || "";
 
     try {
       if (Notification.permission === "granted") {
         new Notification(title, { body });
+        ctx.setOutput(nodeId, "out", true);
         ctx.setOutput(nodeId, "ok", true);
       } else if (Notification.permission !== "denied") {
         const perm = await Notification.requestPermission();
         if (perm === "granted") {
           new Notification(title, { body });
+          ctx.setOutput(nodeId, "out", true);
           ctx.setOutput(nodeId, "ok", true);
         } else {
+          ctx.setOutput(nodeId, "out", false);
           ctx.setOutput(nodeId, "ok", false);
         }
       } else {
+        ctx.setOutput(nodeId, "out", false);
         ctx.setOutput(nodeId, "ok", false);
       }
     } catch {
+      ctx.setOutput(nodeId, "out", false);
       ctx.setOutput(nodeId, "ok", false);
     }
   },
@@ -464,17 +537,22 @@ const notifyNodeDef: NodeDef = {
 const networkInfoNodeDef: NodeDef = {
   type: "sys:network",
   subsystem: "system",
-  inputs: [],
-  outputs: [{ name: "info", type: "data" }],
+  inputs: [{ name: "in", type: "any", optional: true }],
+  outputs: [
+    { name: "out", type: "any" },
+    { name: "info", type: "data" },
+  ],
   execute(ctx: ExecContext, nodeId: NodeId) {
     const conn = (navigator as any).connection;
-    ctx.setOutput(nodeId, "info", {
+    const info = {
       online: navigator.onLine,
       type: conn?.effectiveType || "unknown",
       downlink: conn?.downlink || null,
       rtt: conn?.rtt || null,
       saveData: conn?.saveData || false,
-    });
+    };
+    ctx.setOutput(nodeId, "out", info);
+    ctx.setOutput(nodeId, "info", info);
   },
 };
 
@@ -485,12 +563,16 @@ const geoStore = new Map<string, { lat: number; lng: number }>();
 const geoNodeDef: NodeDef = {
   type: "sys:geolocation",
   subsystem: "system",
-  inputs: [],
-  outputs: [{ name: "location", type: "data" }],
+  inputs: [{ name: "in", type: "any", optional: true }],
+  outputs: [
+    { name: "out", type: "any" },
+    { name: "location", type: "data" },
+  ],
   capabilities: [{ subsystem: "system", action: "read" }],
   async execute(ctx: ExecContext, nodeId: NodeId) {
     const cached = geoStore.get(nodeId);
     if (cached) {
+      ctx.setOutput(nodeId, "out", cached);
       ctx.setOutput(nodeId, "location", cached);
       return;
     }
@@ -508,11 +590,14 @@ const geoNodeDef: NodeDef = {
         timestamp: pos.timestamp,
       };
       geoStore.set(nodeId, loc as any);
+      ctx.setOutput(nodeId, "out", loc);
       ctx.setOutput(nodeId, "location", loc);
     } catch (err) {
-      ctx.setOutput(nodeId, "location", {
+      const errResult = {
         error: err instanceof Error ? err.message : String(err),
-      });
+      };
+      ctx.setOutput(nodeId, "out", errResult);
+      ctx.setOutput(nodeId, "location", errResult);
     }
   },
 };
@@ -522,8 +607,11 @@ const geoNodeDef: NodeDef = {
 const envNodeDef: NodeDef = {
   type: "sys:env",
   subsystem: "system",
-  inputs: [],
-  outputs: [{ name: "vars", type: "data" }],
+  inputs: [{ name: "in", type: "any", optional: true }],
+  outputs: [
+    { name: "out", type: "any" },
+    { name: "vars", type: "data" },
+  ],
   execute(ctx: ExecContext, nodeId: NodeId) {
     const vars: Record<string, unknown> = {
       userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
@@ -544,6 +632,7 @@ const envNodeDef: NodeDef = {
       timestamp: Date.now(),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
+    ctx.setOutput(nodeId, "out", vars);
     ctx.setOutput(nodeId, "vars", vars);
   },
 };

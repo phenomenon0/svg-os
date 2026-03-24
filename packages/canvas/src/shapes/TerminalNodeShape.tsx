@@ -9,6 +9,7 @@ import {
 } from "tldraw";
 import { useRef, useCallback, useEffect, useState } from "react";
 import { Port } from "../Port";
+import { usePointerCapture } from "../hooks/usePointerCapture";
 import { EditableLabel } from "../EditableLabel";
 import { C, FONT } from "../theme";
 
@@ -44,7 +45,8 @@ export class TerminalNodeShapeUtil extends ShapeUtil<TerminalNodeShape> {
       w: 420, h: 300, label: "Terminal", mode: "js",
       history: JSON.stringify([
         { type: "output", text: "SVG OS \u2014 raw terminal" },
-        { type: "output", text: "Full browser API access. Try: fetch, document, navigator" },
+        { type: "output", text: "Built-in: fetchJSON, pp, table, sleep, npm('pkg'), env, input" },
+        { type: "output", text: "Use 'input' to access data from the in port" },
       ]),
       pendingCommand: "",
       runNonce: 0,
@@ -121,14 +123,15 @@ function TerminalComponent({ shape }: { shape: TerminalNodeShape }) {
   }, [clearNonce, editor, shape.id]);
 
   // Capture-phase for input
-  const cleanupRef = useRef<(() => void) | null>(null);
+  const inputElRef = useRef<HTMLInputElement | null>(null);
+  const pointerCapture = usePointerCapture<HTMLInputElement>();
   const inputRef = useCallback((el: HTMLInputElement | null) => {
-    if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
-    if (!el) return;
-    const handler = (e: PointerEvent) => { e.stopPropagation(); e.stopImmediatePropagation(); };
-    el.addEventListener("pointerdown", handler, { capture: true });
-    cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
-  }, []);
+    inputElRef.current = el;
+    pointerCapture(el);
+  }, [pointerCapture]);
+
+  // Click anywhere in terminal body → focus input
+  const focusInput = useCallback(() => { inputElRef.current?.focus(); }, []);
 
   return (
     <HTMLContainer style={{ width: w, height: h, pointerEvents: "all" }}>
@@ -159,10 +162,10 @@ function TerminalComponent({ shape }: { shape: TerminalNodeShape }) {
           </span>
         </div>
 
-        {/* Output */}
-        <div ref={outputRef} style={{
+        {/* Output — click to focus input */}
+        <div ref={outputRef} onClick={focusInput} style={{
           flex: 1, overflow: "auto", padding: 8,
-          fontSize: 12, lineHeight: 1.5,
+          fontSize: 12, lineHeight: 1.5, cursor: "text",
         }}>
           {history.map((entry, i) => (
             <div key={i} style={{
@@ -214,8 +217,8 @@ function TerminalComponent({ shape }: { shape: TerminalNodeShape }) {
           />
         </div>
 
-        <Port side="left" type="text" name="stdin" shapeId={shape.id} />
-        <Port side="right" type="data" name="result" shapeId={shape.id} />
+        <Port side="left" type="any" name="in" shapeId={shape.id} />
+        <Port side="right" type="any" name="out" shapeId={shape.id} />
       </div>
     </HTMLContainer>
   );

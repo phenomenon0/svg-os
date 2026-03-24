@@ -71,7 +71,7 @@ export class ViewNodeShapeUtil extends ShapeUtil<ViewNodeShape> {
 
   override getHandleSnapGeometry(shape: ViewNodeShape) {
     return {
-      points: [new Vec(0, shape.props.h / 2)],
+      points: [new Vec(0, shape.props.h / 2), new Vec(shape.props.w, shape.props.h / 2)],
     };
   }
 
@@ -89,7 +89,8 @@ export class ViewNodeShapeUtil extends ShapeUtil<ViewNodeShape> {
           borderRadius: 8,
         }}
       >
-        <Port side="left" type="data" name="data" shapeId={shape.id} />
+        <Port side="left" type="any" name="in" shapeId={shape.id} />
+        <Port side="right" type="any" name="out" shapeId={shape.id} />
         <SvgView w={w} h={h} content={renderedContent} />
       </HTMLContainer>
     );

@@ -1,13 +1,15 @@
 /**
- * Unified code execution — routes to native JS or Runno WASI sandbox.
+ * Unified code execution — routes to the best runtime per language.
  *
- * JS: instant via native new Function() (eval-sandbox.ts)
- * Everything else: Runno headless WASI (Python, Ruby, C, C++, SQL, PHP)
+ * JS:     instant via native new Function() (eval-sandbox.ts)
+ * Python: Pyodide (full CPython + NumPy/Pandas/Matplotlib via micropip)
+ * Others: Runno headless WASI (Ruby, C, C++, SQL)
  *
- * Languages are lazy-loaded on first use.
+ * Runtimes are lazy-loaded on first use.
  */
 
 import { evalJS, formatResult, type EvalResult } from "./eval-sandbox";
+import { runPython } from "./pyodide-runner";
 export { formatResult };
 
 export type Lang = "js" | "python" | "ruby" | "c" | "cpp" | "sql" | "php";
@@ -29,7 +31,6 @@ const LANG_LABELS: Record<Lang, string> = {
 };
 
 const LANG_TO_RUNTIME: Record<string, string> = {
-  python: "python",
   ruby: "ruby",
   c: "clang",
   cpp: "clangpp",
@@ -70,6 +71,11 @@ export async function executeCode(
     return evalJS(code, input);
   }
 
+  if (lang === "python") {
+    return runPython(code, input);
+  }
+
+  // Ruby, C, C++, SQL still use Runno WASI
   return runViaWasi(lang, code, input);
 }
 
@@ -96,13 +102,11 @@ async function runViaWasi(
     // Lazy import Runno
     const { headlessRunCode } = await import("@runno/runtime");
 
-    // For Python/Ruby: inject input data as a variable assignment at the top
+    // For Ruby: inject input data as a variable assignment at the top
     let fullCode = code;
     if (input && Object.keys(input).length > 0) {
       const dataJson = JSON.stringify(input);
-      if (lang === "python") {
-        fullCode = `import json\ndata = json.loads('${dataJson.replace(/'/g, "\\'")}')\n${code}`;
-      } else if (lang === "ruby") {
+      if (lang === "ruby") {
         fullCode = `require 'json'\ndata = JSON.parse('${dataJson.replace(/'/g, "\\'")}')\n${code}`;
       }
       // For C/SQL/PHP, input is passed via stdin

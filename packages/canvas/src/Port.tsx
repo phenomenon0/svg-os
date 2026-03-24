@@ -137,7 +137,7 @@ export function Port({
   }, [editor, shapeId, side, color, name]);
 
   const isLeft = side === "left";
-  const size = 8;
+  const size = 10;
 
   return (
     <div
@@ -150,39 +150,43 @@ export function Port({
       onMouseLeave={() => setHovering(false)}
       style={{
         position: "absolute",
-        [isLeft ? "left" : "right"]: 4,
+        [isLeft ? "left" : "right"]: -5,
         top: `${topPercent}%`,
         transform: "translateY(-50%)",
-        width: hovering ? 10 : size,
-        height: hovering ? 10 : size,
+        width: hovering ? 14 : size,
+        height: hovering ? 14 : size,
         borderRadius: "50%",
         background: color,
-        border: hovering ? `2px solid #fff` : "none",
+        border: `2px solid ${hovering ? "#fff" : C.bg}`,
         cursor: "crosshair",
-        zIndex: 10,
+        zIndex: 20,
         transition: "all 0.12s ease",
-        boxShadow: hovering ? `0 0 10px ${color}88` : "none",
+        boxShadow: `0 0 ${hovering ? 12 : 4}px ${color}${hovering ? "aa" : "55"}`,
       }}
     >
-      {/* Name label on hover */}
-      {hovering && name && (
+      {/* Name label — always visible, not just on hover */}
+      {name && (
         <div
           style={{
             position: "absolute",
-            [isLeft ? "left" : "right"]: (hovering ? 10 : size) + 6,
+            [isLeft ? "left" : "right"]: (hovering ? 14 : size) + 4,
             top: "50%",
             transform: "translateY(-50%)",
-            background: C.bgCard,
-            border: `1px solid ${C.border}`,
-            borderRadius: 4,
-            padding: "2px 6px",
-            fontSize: 9,
+            fontSize: 8,
             fontFamily: FONT.mono,
-            color: color,
+            color: hovering ? color : `${color}88`,
             whiteSpace: "nowrap",
             letterSpacing: "0.04em",
             pointerEvents: "none",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            userSelect: "none",
+            transition: "all 0.12s ease",
+            ...(hovering ? {
+              background: C.bgCard,
+              border: `1px solid ${C.border}`,
+              borderRadius: 4,
+              padding: "2px 6px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            } : {}),
           }}
         >
           {name}

@@ -45,6 +45,39 @@ const terminalSessions = new Map<string, {
   history: TerminalHistoryEntry[];
 }>();
 
+function createStdlibScope(): Record<string, unknown> {
+  return {
+    fetchJSON: async (url: string) => {
+      const r = await fetch(url);
+      return r.json();
+    },
+    pp: (v: unknown) => {
+      console.log(typeof v === "object" ? JSON.stringify(v, null, 2) : String(v));
+    },
+    table: (data: unknown[]) => {
+      if (!Array.isArray(data) || data.length === 0) { console.log("[]"); return; }
+      const keys = Object.keys(data[0] as object);
+      const header = keys.join(" | ");
+      console.log(header);
+      console.log("-".repeat(header.length));
+      for (const row of data) {
+        console.log(keys.map(k => String((row as Record<string, unknown>)[k] ?? "")).join(" | "));
+      }
+    },
+    sleep: (ms: number) => new Promise(r => setTimeout(r, ms)),
+    npm: async (pkg: string) => {
+      const url = pkg.startsWith("http") ? pkg : `https://esm.sh/${pkg}`;
+      return import(/* @vite-ignore */ url);
+    },
+    env: typeof navigator !== "undefined" ? {
+      userAgent: navigator.userAgent,
+      language: navigator.language,
+      online: navigator.onLine,
+      cores: navigator.hardwareConcurrency,
+    } : {},
+  };
+}
+
 function getTerminalSession(nodeId: string) {
   let session = terminalSessions.get(nodeId);
   if (!session) {
@@ -52,7 +85,7 @@ function getTerminalSession(nodeId: string) {
     terminalSessions.set(nodeId, session);
   }
   if (!terminalScopes.has(nodeId)) {
-    terminalScopes.set(nodeId, {});
+    terminalScopes.set(nodeId, createStdlibScope());
   }
   return session;
 }
@@ -80,7 +113,7 @@ export async function executeTerminal(
   if (clearNonce !== session.lastClearNonce) {
     session.history = [];
     session.lastClearNonce = clearNonce;
-    terminalScopes.set(nodeId, {});
+    terminalScopes.set(nodeId, createStdlibScope());
   }
 
   if (!pendingCommand || runNonce === session.lastRunNonce) {
@@ -129,7 +162,7 @@ export async function executeNotebook(
   cellOutputs: Record<string, unknown>;
 }> {
   const cells = parseNotebookCells(config.cells);
-  const seed = normalizeInput(config.data);
+  const seed = normalizeInput(config.data ?? config.input);
   const runMode = config.runMode === "cell" ? "cell" : "all";
   const activeCellId = typeof config.activeCellId === "string" ? config.activeCellId : "";
 
@@ -253,7 +286,7 @@ function evalJS(code: string, input?: Record<string, unknown>): ExecResult {
   console.warn = console.log;
 
   try {
-    const dataSetup = input ? `const $ = ${JSON.stringify(input)}; const data = $;` : "";
+    const dataSetup = input ? `const input = ${JSON.stringify(input)}; const $ = input; const data = input;` : "";
 
     try {
       const result = new Function(`"use strict"; ${dataSetup} return (${code})`)();
@@ -302,8 +335,8 @@ async function evalTerminalJs(
   };
 
   try {
-    const scopeKeys = [...Object.keys(scope), "$", "data", "stdin"];
-    const scopeValues = [...Object.values(scope), normalizedInput, normalizedInput, input];
+    const scopeKeys = [...Object.keys(scope), "input", "$", "data", "stdin"];
+    const scopeValues = [...Object.values(scope), normalizedInput, normalizedInput, normalizedInput, input];
     let result: unknown;
 
     try {
@@ -365,9 +398,9 @@ async function runViaWasi(
     if (input && Object.keys(input).length > 0) {
       const dataJson = JSON.stringify(input);
       if (lang === "python") {
-        fullCode = `import json\ndata = json.loads('${dataJson.replace(/'/g, "\\'")}')\n${code}`;
+        fullCode = `import json\ninput = json.loads('${dataJson.replace(/'/g, "\\'")}')\ndata = input\n${code}`;
       } else if (lang === "ruby") {
-        fullCode = `require 'json'\ndata = JSON.parse('${dataJson.replace(/'/g, "\\'")}')\n${code}`;
+        fullCode = `require 'json'\ninput = JSON.parse('${dataJson.replace(/'/g, "\\'")}')\ndata = input\n${code}`;
       }
     }
 

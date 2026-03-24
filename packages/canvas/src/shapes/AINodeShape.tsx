@@ -12,10 +12,11 @@ import {
   Vec,
   useEditor,
 } from "tldraw";
-import { useRef, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Port } from "../Port";
-import { EditableLabel } from "../EditableLabel";
-import { C, FONT, nodeContainerStyle, titleBarStyle } from "../theme";
+import { TitleBar } from "../TitleBar";
+import { usePointerCapture } from "../hooks/usePointerCapture";
+import { C, FONT, nodeContainerStyle } from "../theme";
 
 export type AINodeShape = TLBaseShape<
   "ai-node",
@@ -113,14 +114,7 @@ function AIComponent({ shape }: { shape: AINodeShape }) {
     });
   }, [editor, shape.id, localPrompt, runNonce]);
 
-  const cleanupRef = useRef<(() => void) | null>(null);
-  const textareaRef = useCallback((el: HTMLTextAreaElement | null) => {
-    if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
-    if (!el) return;
-    const handler = (e: PointerEvent) => { e.stopPropagation(); e.stopImmediatePropagation(); };
-    el.addEventListener("pointerdown", handler, { capture: true });
-    cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
-  }, []);
+  const textareaRef = usePointerCapture<HTMLTextAreaElement>();
 
   const statusColor = status === "loading" ? C.yellow
     : status === "error" ? C.red
@@ -130,12 +124,7 @@ function AIComponent({ shape }: { shape: AINodeShape }) {
   return (
     <HTMLContainer style={{ width: w, height: h, pointerEvents: "all" }}>
       <div style={nodeContainerStyle}>
-        <div style={titleBarStyle}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor, flexShrink: 0, boxShadow: status === "loading" ? `0 0 8px ${statusColor}` : "none" }} />
-          <EditableLabel
-            value={label}
-            onChange={(v) => editor.updateShape({ id: shape.id, type: "ai-node", props: { label: v } })}
-          />
+        <TitleBar label={label} color={statusColor} onChange={(v) => editor.updateShape({ id: shape.id, type: "ai-node", props: { label: v } })}>
           <span style={{ flex: 1, color: C.faint, fontSize: 9, textAlign: "right", fontFamily: FONT.mono, letterSpacing: "0.05em", textTransform: "uppercase" }}>
             {model.replace("claude-", "").replace("-20250514", "")}
           </span>
@@ -158,7 +147,7 @@ function AIComponent({ shape }: { shape: AINodeShape }) {
           >
             {status === "loading" ? "\u2026" : "Run"}
           </button>
-        </div>
+        </TitleBar>
 
         {/* Prompt */}
         <div style={{ padding: "8px 10px 0", flexShrink: 0 }}>
@@ -208,8 +197,8 @@ function AIComponent({ shape }: { shape: AINodeShape }) {
           )}
         </div>
 
-        <Port side="left" type="data" name="context" shapeId={shape.id} index={0} total={1} />
-        <Port side="right" type="text" name="response" shapeId={shape.id} />
+        <Port side="left" type="any" name="in" shapeId={shape.id} />
+        <Port side="right" type="any" name="out" shapeId={shape.id} />
       </div>
     </HTMLContainer>
   );

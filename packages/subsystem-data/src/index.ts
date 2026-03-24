@@ -6,16 +6,27 @@ import type { Subsystem, NodeDef, ExecContext, NodeId } from "@svg-os/core";
 const jsonNodeDef: NodeDef = {
   type: "data:json",
   subsystem: "data",
-  inputs: [],
-  outputs: [{ name: "data", type: "data" }],
+  inputs: [{ name: "in", type: "any", optional: true }],
+  outputs: [
+    { name: "out", type: "any" },
+    { name: "data", type: "data" },
+  ],
   execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
     const raw = (config.json as string) || "{}";
+    const upstream = ctx.getInput(nodeId, "in") as Record<string, unknown> | undefined;
     try {
       const parsed = JSON.parse(raw);
-      ctx.setOutput(nodeId, "data", parsed);
+      // If there's upstream input, merge it with the node's own data
+      const result = upstream && typeof upstream === "object"
+        ? { ...parsed, ...upstream }
+        : parsed;
+      ctx.setOutput(nodeId, "out", result);
+      ctx.setOutput(nodeId, "data", result);
     } catch {
-      ctx.setOutput(nodeId, "data", {});
+      const result = upstream && typeof upstream === "object" ? upstream : {};
+      ctx.setOutput(nodeId, "out", result);
+      ctx.setOutput(nodeId, "data", result);
     }
   },
 };
@@ -24,14 +35,18 @@ const jsonNodeDef: NodeDef = {
 const tableNodeDef: NodeDef = {
   type: "data:table",
   subsystem: "data",
-  inputs: [{ name: "data", type: "array", optional: true }],
+  inputs: [
+    { name: "in", type: "any", optional: true },
+    { name: "data", type: "array", optional: true },
+  ],
   outputs: [
+    { name: "out", type: "any" },
     { name: "rows", type: "array" },
     { name: "selected", type: "data", optional: true },
   ],
   execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
-    const inputData = ctx.getInput(nodeId, "data");
+    const inputData = ctx.getInput(nodeId, "in") ?? ctx.getInput(nodeId, "data");
 
     // Use input data if connected, otherwise use config
     let rows: unknown[];
@@ -55,6 +70,9 @@ const tableNodeDef: NodeDef = {
       selectedIndex < rows.length
     ) {
       ctx.setOutput(nodeId, "selected", rows[selectedIndex]);
+      ctx.setOutput(nodeId, "out", rows[selectedIndex]);
+    } else {
+      ctx.setOutput(nodeId, "out", rows);
     }
   },
 };
@@ -63,28 +81,33 @@ const tableNodeDef: NodeDef = {
 const transformNodeDef: NodeDef = {
   type: "data:transform",
   subsystem: "data",
-  inputs: [{ name: "input", type: "data" }],
-  outputs: [{ name: "output", type: "data" }],
+  inputs: [
+    { name: "in", type: "any", optional: true },
+    { name: "input", type: "data", optional: true },
+  ],
+  outputs: [
+    { name: "out", type: "any" },
+    { name: "output", type: "data" },
+  ],
   execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
     const input =
-      (ctx.getInput(nodeId, "input") as Record<string, unknown>) || {};
-    const expression = (config.expression as string) || "$.value";
+      (ctx.getInput(nodeId, "in") ?? ctx.getInput(nodeId, "input")) as Record<string, unknown> || {};
+    const expression = (config.expression as string) || "input.value";
 
     try {
-      const dataSetup = `const $ = ${JSON.stringify(input)}; const data = $;`;
+      const dataSetup = `const input = ${JSON.stringify(input)}; const $ = input; const data = input;`;
       const result = new Function(
         `"use strict"; ${dataSetup} return (${expression})`,
       )();
-      ctx.setOutput(
-        nodeId,
-        "output",
-        typeof result === "object" && result !== null
-          ? result
-          : { value: result },
-      );
+      const output = typeof result === "object" && result !== null
+        ? result
+        : { value: result };
+      ctx.setOutput(nodeId, "out", output);
+      ctx.setOutput(nodeId, "output", output);
     } catch {
-      ctx.setOutput(nodeId, "output", input); // pass through on error
+      ctx.setOutput(nodeId, "out", input); // pass through on error
+      ctx.setOutput(nodeId, "output", input);
     }
   },
 };
@@ -93,14 +116,21 @@ const transformNodeDef: NodeDef = {
 const filterNodeDef: NodeDef = {
   type: "data:filter",
   subsystem: "data",
-  inputs: [{ name: "input", type: "array" }],
-  outputs: [{ name: "output", type: "array" }],
+  inputs: [
+    { name: "in", type: "any", optional: true },
+    { name: "input", type: "array", optional: true },
+  ],
+  outputs: [
+    { name: "out", type: "any" },
+    { name: "output", type: "array" },
+  ],
   execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
-    const input = ctx.getInput(nodeId, "input");
+    const input = ctx.getInput(nodeId, "in") ?? ctx.getInput(nodeId, "input");
     const predicate = (config.predicate as string) || "true";
 
     if (!Array.isArray(input)) {
+      ctx.setOutput(nodeId, "out", []);
       ctx.setOutput(nodeId, "output", []);
       return;
     }
@@ -112,8 +142,10 @@ const filterNodeDef: NodeDef = {
         `"use strict"; return (${predicate})`,
       );
       const filtered = input.filter((item, index) => fn(item, index));
+      ctx.setOutput(nodeId, "out", filtered);
       ctx.setOutput(nodeId, "output", filtered);
     } catch {
+      ctx.setOutput(nodeId, "out", input);
       ctx.setOutput(nodeId, "output", input);
     }
   },
@@ -124,16 +156,24 @@ const mergeNodeDef: NodeDef = {
   type: "data:merge",
   subsystem: "data",
   inputs: [
-    { name: "a", type: "data" },
-    { name: "b", type: "data" },
+    { name: "in", type: "any", optional: true },
+    { name: "a", type: "data", optional: true },
+    { name: "b", type: "data", optional: true },
   ],
-  outputs: [{ name: "merged", type: "data" }],
+  outputs: [
+    { name: "out", type: "any" },
+    { name: "merged", type: "data" },
+  ],
   execute(ctx: ExecContext, nodeId: NodeId) {
+    const upstream =
+      (ctx.getInput(nodeId, "in") as Record<string, unknown>) || {};
     const a =
       (ctx.getInput(nodeId, "a") as Record<string, unknown>) || {};
     const b =
       (ctx.getInput(nodeId, "b") as Record<string, unknown>) || {};
-    ctx.setOutput(nodeId, "merged", { ...a, ...b });
+    const result = { ...upstream, ...a, ...b };
+    ctx.setOutput(nodeId, "out", result);
+    ctx.setOutput(nodeId, "merged", result);
   },
 };
 
@@ -141,16 +181,23 @@ const mergeNodeDef: NodeDef = {
 const fetchNodeDef: NodeDef = {
   type: "data:fetch",
   subsystem: "data",
-  inputs: [{ name: "url", type: "text", optional: true }],
-  outputs: [{ name: "response", type: "data" }],
+  inputs: [
+    { name: "in", type: "any", optional: true },
+    { name: "url", type: "text", optional: true },
+  ],
+  outputs: [
+    { name: "out", type: "any" },
+    { name: "response", type: "data" },
+  ],
   capabilities: [{ subsystem: "data", action: "network" }],
   execution: { mode: "async", concurrencyKey: "network:fetch" },
   async execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
-    const inputUrl = ctx.getInput(nodeId, "url") as string;
+    const inputUrl = (ctx.getInput(nodeId, "in") as string) || (ctx.getInput(nodeId, "url") as string);
     const url = inputUrl || (config.url as string) || "";
 
     if (!url) {
+      ctx.setOutput(nodeId, "out", { error: "No URL" });
       ctx.setOutput(nodeId, "response", { error: "No URL" });
       return;
     }
@@ -159,18 +206,23 @@ const fetchNodeDef: NodeDef = {
       const resp = await fetch(url);
       const contentType = resp.headers.get("content-type") || "";
 
+      let result: unknown;
       if (contentType.includes("json")) {
-        ctx.setOutput(nodeId, "response", await resp.json());
+        result = await resp.json();
       } else {
-        ctx.setOutput(nodeId, "response", {
+        result = {
           text: await resp.text(),
           status: resp.status,
-        });
+        };
       }
+      ctx.setOutput(nodeId, "out", result);
+      ctx.setOutput(nodeId, "response", result);
     } catch (err) {
-      ctx.setOutput(nodeId, "response", {
+      const errResult = {
         error: err instanceof Error ? err.message : String(err),
-      });
+      };
+      ctx.setOutput(nodeId, "out", errResult);
+      ctx.setOutput(nodeId, "response", errResult);
     }
   },
 };
@@ -180,17 +232,21 @@ const aiNodeDef: NodeDef = {
   type: "data:ai",
   subsystem: "data",
   inputs: [
+    { name: "in", type: "any", optional: true },
     { name: "prompt", type: "text", optional: true },
     { name: "context", type: "data", optional: true },
   ],
-  outputs: [{ name: "response", type: "text" }],
+  outputs: [
+    { name: "out", type: "any" },
+    { name: "response", type: "text" },
+  ],
   capabilities: [
     { subsystem: "data", action: "network", scope: "api.anthropic.com" },
   ],
   execution: { mode: "exclusive", concurrencyKey: "network:anthropic" },
   async execute(ctx: ExecContext, nodeId: NodeId) {
     const config = ctx.getConfig(nodeId);
-    const inputPrompt = ctx.getInput(nodeId, "prompt") as string;
+    const inputPrompt = (ctx.getInput(nodeId, "in") as string) || (ctx.getInput(nodeId, "prompt") as string);
     const context = ctx.getInput(nodeId, "context") as Record<
       string,
       unknown
@@ -201,6 +257,7 @@ const aiNodeDef: NodeDef = {
     const model = (config.model as string) || "claude-opus-4-6";
 
     if (!prompt || !apiKey) {
+      ctx.setOutput(nodeId, "out", "");
       ctx.setOutput(nodeId, "response", "");
       return;
     }
@@ -242,11 +299,12 @@ const aiNodeDef: NodeDef = {
           )
           .join("") || "";
 
+      ctx.setOutput(nodeId, "out", text);
       ctx.setOutput(nodeId, "response", text);
     } catch (err) {
-      ctx.setOutput(nodeId, "response",
-        `Error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const errMsg = `Error: ${err instanceof Error ? err.message : String(err)}`;
+      ctx.setOutput(nodeId, "out", errMsg);
+      ctx.setOutput(nodeId, "response", errMsg);
     }
   },
 };

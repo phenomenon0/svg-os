@@ -71,7 +71,7 @@ export class WebViewShapeUtil extends ShapeUtil<WebViewShape> {
   override canEdit() { return false; }
 
   override getHandleSnapGeometry(shape: WebViewShape) {
-    return { points: [new Vec(0, shape.props.h / 2)] };
+    return { points: [new Vec(0, shape.props.h / 2), new Vec(shape.props.w, shape.props.h / 2)] };
   }
 
   override component(shape: WebViewShape) {
@@ -252,7 +252,8 @@ function WebViewContent({ shape }: { shape: WebViewShape }) {
 
   return (
     <HTMLContainer style={{ width: w, height: h, pointerEvents: "all", position: "relative", overflow: "hidden", borderRadius: 8 }}>
-      <Port side="left" type="text" name="url" shapeId={shape.id} />
+      <Port side="left" type="any" name="in" shapeId={shape.id} />
+      <Port side="right" type="any" name="out" shapeId={shape.id} />
       <div style={{
         width: "100%", height: "100%",
         display: "flex", flexDirection: "column",

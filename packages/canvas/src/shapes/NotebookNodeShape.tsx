@@ -7,11 +7,12 @@
 import {
   HTMLContainer, Rectangle2d, ShapeUtil, T, TLBaseShape, Vec, useEditor,
 } from "tldraw";
-import { useRef, useState, useCallback, useMemo } from "react";
+import { useRef, useState, useCallback, useMemo, useEffect } from "react";
 import { Port } from "../Port";
 import { executeCode, SUPPORTED_LANGS, getLangShort, formatResult, type Lang } from "../lib/code-runner";
-import { EditableLabel } from "../EditableLabel";
-import { C, FONT, nodeContainerStyle, titleBarStyle } from "../theme";
+import { TitleBar } from "../TitleBar";
+import { usePointerCapture } from "../hooks/usePointerCapture";
+import { C, FONT, nodeContainerStyle } from "../theme";
 
 interface Cell {
   id: string;
@@ -39,7 +40,7 @@ export class NotebookNodeShapeUtil extends ShapeUtil<NotebookNodeShape> {
     return {
       w: 320, h: 240, label: "Notebook",
       cells: JSON.stringify([
-        { id: "c1", type: "code", lang: "js", source: "1 + 1", output: "" },
+        { id: "c1", type: "code", lang: "js", source: "", output: "" },
       ]),
       status: "idle", runNonce: 0, runMode: "", activeCellId: "",
     };
@@ -85,7 +86,12 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
     } catch { return []; }
   }, [shape.props.cells]);
 
+  // Keep a ref to the latest cells so callbacks always see current state
+  const cellsRef = useRef(cells);
+  cellsRef.current = cells;
+
   const commitCells = useCallback((newCells: Cell[]) => {
+    cellsRef.current = newCells;
     editor.updateShape({
       id: shape.id, type: "notebook-node",
       props: { cells: JSON.stringify(newCells) },
@@ -95,22 +101,23 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
   // ── Direct execution (not via Runtime) ──────────────────────
 
   const runCell = useCallback(async (cellId: string) => {
-    const idx = cells.findIndex(c => c.id === cellId);
-    if (idx === -1 || cells[idx].type !== "code") return;
+    const current = cellsRef.current;
+    const idx = current.findIndex(c => c.id === cellId);
+    if (idx === -1 || current[idx].type !== "code") return;
 
     // Build context from earlier cells
     const context: Record<string, unknown> = {};
     for (let i = 0; i < idx; i++) {
-      if (cells[i].type === "code" && cells[i].output) {
+      if (current[i].type === "code" && current[i].output) {
         try {
-          const parsed = JSON.parse(cells[i].output);
+          const parsed = JSON.parse(current[i].output);
           if (typeof parsed === "object" && parsed !== null) Object.assign(context, parsed);
           else context[`cell${i}`] = parsed;
-        } catch { context[`cell${i}`] = cells[i].output; }
+        } catch { context[`cell${i}`] = current[i].output; }
       }
     }
 
-    const { output, result, error } = await executeCode(cells[idx].lang, cells[idx].source, context);
+    const { output, result, error } = await executeCode(current[idx].lang, current[idx].source, context);
     const lines = [...output];
     if (error) lines.push(`Error: ${error}`);
     else if (result !== undefined) {
@@ -118,14 +125,14 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
       if (fmt) lines.push(fmt);
     }
 
-    const updated = [...cells];
+    const updated = [...current];
     updated[idx] = { ...updated[idx], output: lines.join("\n") };
     commitCells(updated);
-  }, [cells, commitCells]);
+  }, [commitCells]);
 
   const runAll = useCallback(async () => {
     setRunning(true);
-    let cur = [...cells];
+    let cur = [...cellsRef.current];
     const ctx: Record<string, unknown> = {};
 
     for (let i = 0; i < cur.length; i++) {
@@ -144,31 +151,35 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
 
     commitCells(cur);
     setRunning(false);
-  }, [cells, commitCells]);
+  }, [commitCells]);
 
   // ── Cell CRUD ───────────────────────────────────────────────
 
   const addCell = useCallback((type: "code" | "markdown", lang: Lang = "js") => {
-    commitCells([...cells, { id: `c${Date.now()}`, type, lang, source: "", output: "" }]);
-  }, [cells, commitCells]);
+    const current = cellsRef.current;
+    commitCells([...current, { id: `c${Date.now()}`, type, lang, source: "", output: "" }]);
+  }, [commitCells]);
 
   const deleteCell = useCallback((cellId: string) => {
-    if (cells.length <= 1) return;
-    commitCells(cells.filter(c => c.id !== cellId));
-  }, [cells, commitCells]);
+    const current = cellsRef.current;
+    if (current.length <= 1) return;
+    commitCells(current.filter(c => c.id !== cellId));
+  }, [commitCells]);
 
   const updateSource = useCallback((cellId: string, source: string) => {
-    commitCells(cells.map(c => c.id === cellId ? { ...c, source } : c));
-  }, [cells, commitCells]);
+    const current = cellsRef.current;
+    commitCells(current.map(c => c.id === cellId ? { ...c, source } : c));
+  }, [commitCells]);
 
   const cycleLang = useCallback((cellId: string) => {
+    const current = cellsRef.current;
     const order: Lang[] = SUPPORTED_LANGS.map(l => l.id);
-    commitCells(cells.map(c => {
+    commitCells(current.map(c => {
       if (c.id !== cellId) return c;
       const next = order[(order.indexOf(c.lang) + 1) % order.length];
       return { ...c, lang: next, output: "" };
     }));
-  }, [cells, commitCells]);
+  }, [commitCells]);
 
   // ── Render ──────────────────────────────────────────────────
 
@@ -178,10 +189,7 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
     <HTMLContainer style={{ width: w, height: h, pointerEvents: "all" }}>
       <div style={nodeContainerStyle}>
         {/* Title bar */}
-        <div style={titleBarStyle}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.notebook, flexShrink: 0 }} />
-          <EditableLabel value={label} onChange={v => editor.updateShape({ id: shape.id, type: "notebook-node", props: { label: v } })} />
-          <span style={{ flex: 1 }} />
+        <TitleBar label={label} color={C.notebook} onChange={v => editor.updateShape({ id: shape.id, type: "notebook-node", props: { label: v } })}>
           {running && <span style={{ color: C.yellow, fontSize: 9, fontFamily: FONT.mono }}>Running...</span>}
           <button
             onClick={e => { e.stopPropagation(); runAll(); }}
@@ -191,7 +199,7 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
           >
             RUN ALL
           </button>
-        </div>
+        </TitleBar>
 
         {/* Cells */}
         <div style={{ flex: 1, overflow: "auto", padding: 4 }}>
@@ -203,27 +211,30 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
               onToggleLang={() => cycleLang(cell.id)}
             />
           ))}
+        </div>
 
-          {/* Add buttons */}
-          <div style={{ display: "flex", gap: 4, padding: "4px 6px", justifyContent: "center", flexWrap: "wrap" }}>
-            <AddBtn label="+ JS" color={C.yellow} onClick={() => addCell("code", "js")} />
-            <AddBtn label="+ Python" color={C.blue} onClick={() => addCell("code", "python")} />
-            <AddBtn label="+ MD" color={C.faint} onClick={() => addCell("markdown")} />
-          </div>
+        {/* Add buttons — outside scroll area so tldraw doesn't eat events */}
+        <div style={{ display: "flex", gap: 4, padding: "4px 8px", justifyContent: "center", flexWrap: "wrap", borderTop: `1px solid ${C.borderSoft}`, flexShrink: 0 }}>
+          <AddBtn label="+ JS" color={C.yellow} onClick={() => addCell("code", "js")} />
+          <AddBtn label="+ Python" color={C.blue} onClick={() => addCell("code", "python")} />
+          <AddBtn label="+ Ruby" color={C.red} onClick={() => addCell("code", "ruby")} />
+          <AddBtn label="+ C" color={C.green} onClick={() => addCell("code", "c")} />
+          <AddBtn label="+ SQL" color={C.cyan} onClick={() => addCell("code", "sql")} />
+          <AddBtn label="+ MD" color={C.faint} onClick={() => addCell("markdown")} />
         </div>
 
         {/* Ports */}
-        <Port side="left" type="data" name="data" shapeId={shape.id} />
+        <Port side="left" type="any" name="in" shapeId={shape.id} />
         {codeCells.length > 0 ? (
           <>
-            <Port side="right" type="data" name="all" shapeId={shape.id} index={0} total={codeCells.length + 1} />
+            <Port side="right" type="any" name="out" shapeId={shape.id} index={0} total={codeCells.length + 1} />
             {codeCells.map((c, ci) => (
               <Port key={c.id} side="right" type="data" name={`cell:${cells.indexOf(c)}`}
                 shapeId={shape.id} index={ci + 1} total={codeCells.length + 1} />
             ))}
           </>
         ) : (
-          <Port side="right" type="data" name="all" shapeId={shape.id} />
+          <Port side="right" type="any" name="out" shapeId={shape.id} />
         )}
       </div>
     </HTMLContainer>
@@ -238,18 +249,11 @@ function CellView({ cell, index, onRun, onDelete, onSourceChange, onToggleLang }
 }) {
   const [local, setLocal] = useState(cell.source);
   const [focused, setFocused] = useState(false);
-  const cleanupRef = useRef<(() => void) | null>(null);
 
   // Only sync from parent when NOT focused (prevents reset while typing)
   if (!focused && cell.source !== local) setLocal(cell.source);
 
-  const taRef = useCallback((el: HTMLTextAreaElement | null) => {
-    if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
-    if (!el) return;
-    const h = (e: PointerEvent) => { e.stopPropagation(); e.stopImmediatePropagation(); };
-    el.addEventListener("pointerdown", h, { capture: true });
-    cleanupRef.current = () => el.removeEventListener("pointerdown", h, { capture: true });
-  }, []);
+  const taRef = usePointerCapture<HTMLTextAreaElement>();
 
   const isCode = cell.type === "code";
   const colors: Record<string, string> = { js: C.yellow, python: C.blue, ruby: C.red, c: C.green, cpp: C.green, sql: C.cyan };
@@ -267,16 +271,8 @@ function CellView({ cell, index, onRun, onDelete, onSourceChange, onToggleLang }
           [{index + 1}] {isCode ? getLangShort(cell.lang) : "MD"}
         </span>
         <span style={{ flex: 1 }} />
-        {isCode && (
-          <button onClick={e => { e.stopPropagation(); onRun(); }} onPointerDown={e => e.stopPropagation()}
-            style={{ background: "transparent", border: "none", color: C.green, fontSize: 9, cursor: "pointer", padding: "0 2px" }}>
-            {"\u25B6"}
-          </button>
-        )}
-        <button onClick={e => { e.stopPropagation(); onDelete(); }} onPointerDown={e => e.stopPropagation()}
-          style={{ background: "transparent", border: "none", color: C.red, fontSize: 9, cursor: "pointer", padding: "0 2px", opacity: 0.5 }}>
-          {"\u2715"}
-        </button>
+        {isCode && <CellBtn icon={"\u25B6"} color={C.green} onAction={onRun} />}
+        <CellBtn icon={"\u2715"} color={C.red} onAction={onDelete} opacity={0.5} />
       </div>
 
       {/* Source */}
@@ -312,22 +308,37 @@ function CellView({ cell, index, onRun, onDelete, onSourceChange, onToggleLang }
   );
 }
 
-// ── Add button ───────────────────────────────────────────────────────────────
+// ── Cell action button (run/delete) — uses native capture to bypass tldraw ──
 
-function AddBtn({ label, color, onClick }: { label: string; color: string; onClick: () => void }) {
+function CellBtn({ icon, color, onAction, opacity = 1 }: { icon: string; color: string; onAction: () => void; opacity?: number }) {
   const cleanupRef = useRef<(() => void) | null>(null);
   const btnRef = useCallback((el: HTMLButtonElement | null) => {
     if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
     if (!el) return;
-    const handler = (e: PointerEvent) => { e.stopPropagation(); e.stopImmediatePropagation(); };
-    el.addEventListener("pointerdown", handler, { capture: true });
-    cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
-  }, []);
+    const onDown = (e: PointerEvent) => { e.stopPropagation(); e.stopImmediatePropagation(); };
+    const onUp = (e: PointerEvent) => { e.stopPropagation(); e.stopImmediatePropagation(); onAction(); };
+    el.addEventListener("pointerdown", onDown, { capture: true });
+    el.addEventListener("pointerup", onUp, { capture: true });
+    cleanupRef.current = () => {
+      el.removeEventListener("pointerdown", onDown, { capture: true });
+      el.removeEventListener("pointerup", onUp, { capture: true });
+    };
+  }, [onAction]);
 
   return (
+    <button ref={btnRef} style={{ background: "transparent", border: "none", color, fontSize: 9, cursor: "pointer", padding: "2px 4px", opacity }}>
+      {icon}
+    </button>
+  );
+}
+
+// ── Add button ───────────────────────────────────────────────────────────────
+
+function AddBtn({ label, color, onClick }: { label: string; color: string; onClick: () => void }) {
+  return (
     <button
-      ref={btnRef}
       onClick={e => { e.stopPropagation(); onClick(); }}
+      onPointerDown={e => e.stopPropagation()}
       style={{
         background: "transparent", border: `1px solid ${color}44`, borderRadius: 3,
         color, fontSize: 9, padding: "2px 6px", cursor: "pointer", fontFamily: FONT.mono,

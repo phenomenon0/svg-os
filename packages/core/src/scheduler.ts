@@ -36,9 +36,20 @@ export class Scheduler {
     try {
       do {
         this.rerunRequested = false;
-        this.outputCache.clear();
 
         const executionPlan = plan || this.plan();
+
+        // Only clear outputs for nodes in the current execution plan,
+        // so that nodes not being re-executed retain their cached outputs.
+        for (const nodeId of executionPlan.order) {
+          const node = this.graph.getNode(nodeId);
+          if (!node) continue;
+          const def = this.graph.getNodeDef(node.type);
+          if (!def) continue;
+          for (const output of def.outputs) {
+            this.outputCache.delete(`${nodeId}:${output.name}`);
+          }
+        }
         plan = undefined;
 
         this.events.emit({
@@ -221,6 +232,10 @@ export class Scheduler {
 
   private buildContext(nodeId: NodeId, _def: NodeDef): ExecContext {
     return {
+      // Note: the nodeId parameter is ignored by design. The context is already
+      // bound to a specific node, so getInput always reads edges for `nodeId`.
+      // The parameter exists for API consistency with the ExecContext interface,
+      // where callers conventionally pass their own nodeId.
       getInput: (_nid: NodeId, portName: string) => {
         // Find edges that connect to this node's port
         const edges = this.graph.getEdgesTo(nodeId, portName);

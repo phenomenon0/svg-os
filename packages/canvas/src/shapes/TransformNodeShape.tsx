@@ -85,7 +85,7 @@ export class TransformNodeShapeUtil extends ShapeUtil<TransformNodeShape> {
           }}
         >
           {/* Input port */}
-          <Port side="left" type="data" name="input" shapeId={shape.id} />
+          <Port side="left" type="any" name="in" shapeId={shape.id} />
           <div
             style={{
               width: 8,
@@ -122,7 +122,7 @@ export class TransformNodeShapeUtil extends ShapeUtil<TransformNodeShape> {
             {truncExpr}
           </div>
           {/* Output port */}
-          <Port side="right" type="data" name="output" shapeId={shape.id} />
+          <Port side="right" type="any" name="out" shapeId={shape.id} />
         </div>
       </HTMLContainer>
     );

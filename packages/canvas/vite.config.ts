@@ -2,8 +2,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 
+const base = process.env.CANVAS_BASE || "/";
+
 export default defineConfig({
   root: ".",
+  base,
   plugins: [
     react(),
     viteStaticCopy({
@@ -23,6 +26,10 @@ export default defineConfig({
     port: 5190,
     fs: {
       allow: ["../.."],
+    },
+    headers: {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "credentialless",
     },
   },
   optimizeDeps: {

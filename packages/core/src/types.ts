@@ -86,6 +86,7 @@ export interface ExecutionPlan {
 }
 
 export interface ExecContext {
+  /** Get input value for a port. The nodeId param is unused (context is pre-bound) but kept for API clarity. */
   getInput(nodeId: NodeId, portName: string): unknown;
   setOutput(nodeId: NodeId, portName: string, value: unknown): void;
   getConfig(nodeId: NodeId): Record<string, unknown>;

@@ -207,8 +207,8 @@ function TableComponent({ shape }: { shape: TableNodeShape }) {
           </div>
         )}
 
-        <Port side="left" type="data" name="in" shapeId={shape.id} />
-        <Port side="right" type="data" name="rows" shapeId={shape.id} />
+        <Port side="left" type="any" name="in" shapeId={shape.id} />
+        <Port side="right" type="any" name="out" shapeId={shape.id} />
       </div>
     </HTMLContainer>
   );
