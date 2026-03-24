@@ -254,12 +254,15 @@ const notebookNodeDef: NodeDef = {
       const allOutputs: Record<string, unknown> = {};
       for (let i = 0; i < cells.length; i++) {
         if (cells[i].type === "code" && cells[i].output) {
+          // Skip error outputs — don't propagate errors downstream
+          const out = cells[i].output!;
+          if (out.startsWith("Error:") || out.includes("Error: ")) continue;
           try {
-            const parsed = JSON.parse(cells[i].output!);
+            const parsed = JSON.parse(out);
             if (typeof parsed === "object" && parsed !== null) Object.assign(allOutputs, parsed);
             else allOutputs[`cell${i}`] = parsed;
-          } catch { allOutputs[`cell${i}`] = cells[i].output; }
-          ctx.setOutput(`cell:${i}`, allOutputs[`cell${i}`] ?? cells[i].output);
+          } catch { allOutputs[`cell${i}`] = out; }
+          ctx.setOutput(`cell:${i}`, allOutputs[`cell${i}`] ?? out);
         }
       }
       ctx.setOutput("all", allOutputs);

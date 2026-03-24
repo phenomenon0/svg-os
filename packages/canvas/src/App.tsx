@@ -113,7 +113,13 @@ function RuntimeBridge() {
         if (!propsChanged && !metaChanged) return;
 
         syncShapeNode(next as never, runtime);
-        scheduleRun(runtime);
+
+        // Don't auto-run the graph for manual-trigger nodes (notebook, terminal)
+        // Their execution is driven by the user clicking Run, not by prop changes
+        const manualTypes = new Set(["notebook-node", "terminal-node"]);
+        if (!manualTypes.has(next.type)) {
+          scheduleRun(runtime);
+        }
       },
     );
 
