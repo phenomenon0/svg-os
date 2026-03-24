@@ -11,95 +11,12 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRuntime } from "./RuntimeContext";
 import { C, FONT } from "./theme";
 import { listNodeTypes, getNodeType as bridgeGetNodeType, renderTemplateInline } from "@svg-os/bridge";
-import { getModel } from "./lib/claude-api";
-
-// ── Descriptions ──────────────────────────────────────────────────────────────
-
-const NODE_DESCRIPTIONS: Record<string, string> = {
-  "sys:file-open": "Open a file from disk",
-  "sys:file-write": "Save content to a file",
-  "sys:folder": "Browse a directory",
-  "sys:disk": "Storage usage info",
-  "sys:processes": "Runtime metrics & memory",
-  "sys:clipboard-read": "Read from clipboard",
-  "sys:clipboard-write": "Write to clipboard",
-  "sys:screen-capture": "Take a screenshot",
-  "sys:notify": "Send a notification",
-  "sys:network": "Network connection info",
-  "sys:geolocation": "GPS location",
-  "sys:terminal": "Code execution sandbox",
-  "sys:notebook": "Multi-cell notebook",
-  "sys:env": "Environment variables",
-  "data:json": "Static JSON source",
-  "data:table": "Tabular data editor",
-  "data:transform": "Expression transform",
-  "data:filter": "Filter an array",
-  "data:merge": "Merge two objects",
-  "data:fetch": "HTTP fetch",
-  "data:ai": "Claude AI completion",
-  "view:svg-template": "Rendered SVG template",
-  "view:note": "Markdown editor",
-  "view:webview": "Web browser iframe",
-  "view:metric": "Single value display",
-  "view:chart": "Data chart",
-};
-
-// ── Shape mapping ─────────────────────────────────────────────────────────────
-
-const NODE_TO_SHAPE: Record<string, string> = {
-  "sys:terminal": "terminal-node",
-  "sys:notebook": "notebook-node",
-  "data:json": "data-node",
-  "data:table": "table-node",
-  "data:transform": "transform-node",
-  "data:ai": "ai-node",
-  "view:note": "note-node",
-  "view:svg-template": "view-node",
-  "view:webview": "web-view",
-};
-
-// ── Subsystem colors ──────────────────────────────────────────────────────────
-
-function subsystemColor(type: string): string {
-  if (type.startsWith("sys:")) return C.green;
-  if (type.startsWith("data:")) return C.blue;
-  if (type.startsWith("view:")) return C.accent;
-  return C.muted;
-}
-
-// ── Default props per shape type ──────────────────────────────────────────────
-
-function defaultPropsForShape(shapeType: string): Record<string, unknown> {
-  switch (shapeType) {
-    case "terminal-node":
-      return {
-        w: 400, h: 280, label: "Terminal", mode: "js",
-        history: JSON.stringify([
-          { type: "output", text: "SVG OS Terminal \u2014 JavaScript sandbox" },
-          { type: "output", text: "Type expressions, see results. Try: 1 + 1" },
-        ]),
-      };
-    case "notebook-node":
-      return {
-        w: 400, h: 320, label: "Notebook",
-        cells: JSON.stringify([{ id: "c1", type: "code", lang: "python", source: "print('Hello!')\n2 ** 10", output: "" }]),
-      };
-    case "data-node":
-      return { w: 300, h: 200, dataJson: '{\n  "name": "Example",\n  "score": 95\n}', label: "Data" };
-    case "table-node":
-      return { w: 320, h: 240, label: "Table", dataJson: "[]", selectedRow: -1, outputMode: "all" };
-    case "transform-node":
-      return { w: 180, h: 48, expression: "$.value", label: "Transform" };
-    case "ai-node":
-      return { w: 400, h: 320, label: "AI", prompt: "", response: "", model: getModel(), status: "idle", errorMessage: "" };
-    case "note-node":
-      return { w: 320, h: 240, label: "Note", content: "", mode: "edit" };
-    case "web-view":
-      return { w: 480, h: 360, url: "https://femiadeniran.com", label: "WebView", mode: "url", htmlContent: "" };
-    default:
-      return { w: 300, h: 200, label: "Node" };
-  }
-}
+import {
+  NODE_DESCRIPTIONS,
+  NODE_TO_SHAPE,
+  defaultPropsForShape,
+  subsystemColor,
+} from "./lib/node-registry";
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
@@ -140,9 +57,13 @@ function fuzzyMatch(query: string, text: string): boolean {
 export function CommandPalette({
   open,
   onClose,
+  onOpenPresetModal,
+  onToggleTiled,
 }: {
   open: boolean;
   onClose: () => void;
+  onOpenPresetModal?: () => void;
+  onToggleTiled?: () => void;
 }) {
   const editor = useEditor();
   const runtime = useRuntime();
@@ -208,8 +129,32 @@ export function CommandPalette({
       },
     });
 
+    if (onOpenPresetModal) {
+      result.push({
+        id: "action:create-workspace",
+        label: "Create Workspace",
+        description: "Launch a new workspace from preset",
+        isAction: true,
+        execute: () => {
+          onOpenPresetModal();
+        },
+      });
+    }
+
+    if (onToggleTiled) {
+      result.push({
+        id: "action:toggle-tiled",
+        label: "Toggle Tiled Mode",
+        description: "Switch between canvas and tiled layout",
+        isAction: true,
+        execute: () => {
+          onToggleTiled();
+        },
+      });
+    }
+
     return result;
-  }, [runtime]);
+  }, [runtime, onOpenPresetModal, onToggleTiled]);
 
   // ── Filter ────────────────────────────────────────────────────────────
 
