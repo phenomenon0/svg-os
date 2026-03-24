@@ -12,18 +12,18 @@ import { C, FONT } from "../theme";
 
 export type TableNodeShape = TLBaseShape<
   "table-node",
-  { w: number; h: number; label: string; dataJson: string; outputMode: string }
+  { w: number; h: number; label: string; dataJson: string; selectedRow: number; outputMode: string }
 >;
 
 export class TableNodeShapeUtil extends ShapeUtil<TableNodeShape> {
   static override type = "table-node" as const;
   static override props = {
     w: T.number, h: T.number, label: T.string, dataJson: T.string,
-    outputMode: T.string,
+    selectedRow: T.number, outputMode: T.string,
   };
 
   getDefaultProps(): TableNodeShape["props"] {
-    return { w: 360, h: 240, label: "Table", dataJson: "[]", outputMode: "all" };
+    return { w: 360, h: 240, label: "Table", dataJson: "[]", selectedRow: -1, outputMode: "all" };
   }
 
   override getGeometry(shape: TableNodeShape) {
