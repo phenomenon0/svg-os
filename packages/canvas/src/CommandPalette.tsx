@@ -140,9 +140,13 @@ function fuzzyMatch(query: string, text: string): boolean {
 export function CommandPalette({
   open,
   onClose,
+  onOpenPresetModal,
+  onToggleTiled,
 }: {
   open: boolean;
   onClose: () => void;
+  onOpenPresetModal?: () => void;
+  onToggleTiled?: () => void;
 }) {
   const editor = useEditor();
   const runtime = useRuntime();
@@ -208,8 +212,32 @@ export function CommandPalette({
       },
     });
 
+    if (onOpenPresetModal) {
+      result.push({
+        id: "action:create-workspace",
+        label: "Create Workspace",
+        description: "Launch a new workspace from preset",
+        isAction: true,
+        execute: () => {
+          onOpenPresetModal();
+        },
+      });
+    }
+
+    if (onToggleTiled) {
+      result.push({
+        id: "action:toggle-tiled",
+        label: "Toggle Tiled Mode",
+        description: "Switch between canvas and tiled layout",
+        isAction: true,
+        execute: () => {
+          onToggleTiled();
+        },
+      });
+    }
+
     return result;
-  }, [runtime]);
+  }, [runtime, onOpenPresetModal, onToggleTiled]);
 
   // ── Filter ────────────────────────────────────────────────────────────
 

@@ -24,7 +24,7 @@ import { NodeInspector } from "./NodeInspector";
 import { AIChat } from "./AIChat";
 import { CollabOverlay } from "./CollabOverlay";
 import { initWasm } from "./lib/wasm-bridge";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { Runtime } from "@svg-os/core";
 import { RuntimeProvider, useRuntime } from "./RuntimeContext";
 import { CommandPalette } from "./CommandPalette";
@@ -38,6 +38,15 @@ import {
   syncRuntimeToShapes,
   clearMappings,
 } from "./lib/runtime-bridge";
+import type { WorkspaceDescriptor, PresetId } from "./lib/workspace";
+import {
+  saveWorkspace,
+  captureWorkspace,
+  materializePreset,
+  setActiveWorkspaceId,
+} from "./lib/workspace";
+import { WorkspaceSelector, PresetModal, WORKSPACE_BAR_HEIGHT } from "./WorkspaceSelector";
+import { applyTiledLayout, restoreCanvasMode, clearSavedPositions } from "./TiledMode";
 
 const customShapeUtils = [
   DataNodeShapeUtil,
@@ -160,7 +169,13 @@ function RuntimeBridge() {
 }
 
 // Stable component reference to avoid remounting
-function CanvasOverlays() {
+function CanvasOverlays({
+  onOpenPresetModal,
+  onToggleTiled,
+}: {
+  onOpenPresetModal?: () => void;
+  onToggleTiled?: () => void;
+}) {
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
 
   useEffect(() => {
@@ -180,13 +195,22 @@ function CanvasOverlays() {
       <CollabOverlay />
       <NodePalette />
       <NodeInspector />
-      <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
+      <CommandPalette
+        open={cmdPaletteOpen}
+        onClose={() => setCmdPaletteOpen(false)}
+        onOpenPresetModal={onOpenPresetModal}
+        onToggleTiled={onToggleTiled}
+      />
     </>
   );
 }
 
 export function App() {
   const [wasmLoaded, setWasmLoaded] = useState(false);
+  const [workspace, setWorkspace] = useState<WorkspaceDescriptor | null>(null);
+  const [presetModalOpen, setPresetModalOpen] = useState(false);
+  const editorRef = useRef<import("tldraw").Editor | null>(null);
+  const runtimeRef = useRef<Runtime | null>(null);
 
   useEffect(() => {
     initWasm()
@@ -194,9 +218,93 @@ export function App() {
       .catch(console.error);
   }, []);
 
+  const handleExitWorkspace = useCallback(() => {
+    if (workspace && editorRef.current && runtimeRef.current) {
+      const snapshot = captureWorkspace(editorRef.current, runtimeRef.current, workspace);
+      saveWorkspace(snapshot);
+      if (workspace.mode === "tiled") {
+        restoreCanvasMode(editorRef.current);
+      }
+    }
+    clearSavedPositions();
+    setActiveWorkspaceId(null);
+    setWorkspace(null);
+  }, [workspace]);
+
+  const handleCreateFromPreset = useCallback(
+    (presetId: PresetId) => {
+      const editor = editorRef.current;
+      const runtime = runtimeRef.current;
+      if (!editor) return;
+
+      // Save current workspace if any
+      if (workspace && runtime) {
+        const snapshot = captureWorkspace(editor, runtime, workspace);
+        saveWorkspace(snapshot);
+        if (workspace.mode === "tiled") {
+          restoreCanvasMode(editor);
+        }
+      }
+      clearSavedPositions();
+      clearMappings();
+
+      // Clear canvas
+      const allShapes = editor.getCurrentPageShapes();
+      if (allShapes.length > 0) {
+        editor.deleteShapes(allShapes.map((s) => s.id));
+      }
+
+      // Build new workspace
+      const desc = materializePreset(editor, presetId);
+      setWorkspace(desc);
+      setActiveWorkspaceId(desc.id);
+
+      // Apply tiled layout
+      if (desc.mode === "tiled" && desc.tiledLayout) {
+        requestAnimationFrame(() => {
+          applyTiledLayout(editor, desc.tiledLayout!);
+        });
+      } else {
+        editor.zoomToFit({ animation: { duration: 200 } });
+      }
+
+      setPresetModalOpen(false);
+    },
+    [workspace],
+  );
+
+  const handleToggleTiled = useCallback(() => {
+    if (!workspace || !editorRef.current) return;
+    const editor = editorRef.current;
+    const newMode = workspace.mode === "tiled" ? "canvas" : "tiled";
+    const updated = { ...workspace, mode: newMode as "canvas" | "tiled", updatedAt: Date.now() };
+
+    if (newMode === "tiled" && updated.tiledLayout) {
+      applyTiledLayout(editor, updated.tiledLayout);
+    } else {
+      restoreCanvasMode(editor);
+    }
+
+    setWorkspace(updated);
+  }, [workspace]);
+
+  // Stable component ref for InFrontOfTheCanvas
+  const OverlayComponent = useCallback(
+    () => (
+      <CanvasOverlays
+        onOpenPresetModal={() => setPresetModalOpen(true)}
+        onToggleTiled={handleToggleTiled}
+      />
+    ),
+    [handleToggleTiled],
+  );
+
+  const hasWorkspaceBar = workspace !== null;
+
   return (
     <RuntimeProvider>
-      <div style={{ position: "fixed", inset: 0 }}>
+      <RuntimeRefCapture runtimeRef={runtimeRef} />
+      <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>
         {!wasmLoaded && (
           <div
             style={{
@@ -215,18 +323,50 @@ export function App() {
             Loading SVG OS engine...
           </div>
         )}
-        <Tldraw
-          shapeUtils={customShapeUtils}
-          components={{
-            InFrontOfTheCanvas: CanvasOverlays,
-            TopPanel: null,
-            SharePanel: null,
-          }}
-          onMount={(editor) => {
-            editor.user.updateUserPreferences({ colorScheme: "dark" });
-          }}
-        />
+
+        <div style={{ flex: 1, position: "relative" }}>
+          <Tldraw
+            shapeUtils={customShapeUtils}
+            components={{
+              InFrontOfTheCanvas: OverlayComponent,
+              TopPanel: null,
+              SharePanel: null,
+            }}
+            onMount={(editor) => {
+              editor.user.updateUserPreferences({ colorScheme: "dark" });
+              editorRef.current = editor;
+            }}
+          />
+
+          {/* Workspace bar overlays on top of tldraw */}
+          {hasWorkspaceBar && (
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 2000 }}>
+              <WorkspaceSelector
+                descriptor={workspace}
+                setDescriptor={setWorkspace}
+                onExit={handleExitWorkspace}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Preset modal (standalone, for CommandPalette trigger) */}
+        {presetModalOpen && !hasWorkspaceBar && (
+          <PresetModal
+            onSelect={handleCreateFromPreset}
+            onClose={() => setPresetModalOpen(false)}
+          />
+        )}
       </div>
     </RuntimeProvider>
   );
+}
+
+/** Captures the runtime ref from inside the provider */
+function RuntimeRefCapture({ runtimeRef }: { runtimeRef: React.MutableRefObject<Runtime | null> }) {
+  const runtime = useRuntime();
+  useEffect(() => {
+    runtimeRef.current = runtime;
+  }, [runtime, runtimeRef]);
+  return null;
 }
