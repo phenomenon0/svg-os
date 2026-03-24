@@ -55,7 +55,7 @@ const RUNTIME_MANAGED_PROPS: Record<string, string[]> = {
   "view-node": ["renderedContent"],
   "ai-node": ["response", "status", "errorMessage"],
   "terminal-node": ["history"],
-  "notebook-node": ["status"],
+  "notebook-node": [],
 };
 
 export function registerMapping(shapeId: string, nodeId: string): void {
@@ -294,8 +294,6 @@ function buildShapePatch(
   }
 
   if (nodeType === "sys:notebook") {
-    const nextStatus = status === "running" ? "running" : "idle";
-
     // Only update cell outputs from runtime, never overwrite cell structure.
     // The notebook component manages cell add/delete/reorder directly.
     let nextCells = shape.props.cells;
@@ -303,7 +301,6 @@ function buildShapePatch(
       try {
         const runtimeCells = JSON.parse(data.cells) as Array<{ id: string; output?: string }>;
         const currentCells = JSON.parse(shape.props.cells) as Array<{ id: string; output?: string }>;
-        // Merge outputs from runtime into current cells (preserving structure)
         const outputMap = new Map(runtimeCells.map(c => [c.id, c.output]));
         const merged = currentCells.map(c => {
           const runtimeOutput = outputMap.get(c.id);
@@ -315,11 +312,8 @@ function buildShapePatch(
       }
     }
 
-    if (nextCells !== shape.props.cells || nextStatus !== shape.props.status) {
-      return {
-        cells: nextCells,
-        status: nextStatus,
-      };
+    if (nextCells !== shape.props.cells) {
+      return { cells: nextCells };
     }
     return null;
   }
