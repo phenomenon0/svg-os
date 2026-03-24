@@ -22,7 +22,8 @@ import {
 import { Port } from "../Port";
 import { EditableLabel } from "../EditableLabel";
 import { C, FONT } from "../theme";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { fetchViaProxy } from "../lib/iframe-proxy";
 
 export type WebViewShape = TLBaseShape<
   "web-view",
@@ -247,6 +248,25 @@ function WebViewContent({ shape }: { shape: WebViewShape }) {
     cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
   }, []);
 
+  // Proxy fetch for URL mode — bypasses X-Frame-Options
+  const [proxiedHtml, setProxiedHtml] = useState<string | null>(null);
+  const [proxyLoading, setProxyLoading] = useState(false);
+
+  useEffect(() => {
+    if (mode !== "url" || !activeUrl || activeUrl === "about:blank") {
+      setProxiedHtml(null);
+      return;
+    }
+    let cancelled = false;
+    setProxyLoading(true);
+    fetchViaProxy(activeUrl).then((html) => {
+      if (cancelled) return;
+      setProxiedHtml(html);
+      setProxyLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [activeUrl, mode]);
+
   const barHeight = 32;
   const isHtmlMode = mode === "html" || mode === "code";
 
@@ -358,20 +378,26 @@ function WebViewContent({ shape }: { shape: WebViewShape }) {
             }}
           />
         ) : mode === "url" ? (
-          <iframe
-            src={activeUrl}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation allow-modals allow-presentation allow-downloads"
-            allow="accelerometer; camera; encrypted-media; fullscreen; geolocation; gyroscope; microphone; midi; payment; usb; xr-spatial-tracking; webgl; webgl2"
-            // @ts-ignore — credentialless bypasses parent COEP
-            credentialless=""
-            style={{
-              border: "none",
-              width: "100%",
-              height: `calc(100% - ${barHeight}px)`,
-              background: "#ffffff",
-            }}
-            title={`WebView: ${activeUrl}`}
-          />
+          proxiedHtml ? (
+            <iframe
+              srcDoc={proxiedHtml}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-presentation"
+              style={{
+                border: "none",
+                width: "100%",
+                height: `calc(100% - ${barHeight}px)`,
+                background: "#ffffff",
+              }}
+              title={`WebView: ${activeUrl}`}
+            />
+          ) : (
+            <div style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+              color: C.faint, fontSize: 12, fontFamily: FONT.mono,
+            }}>
+              {proxyLoading ? "Loading..." : "Enter a URL above"}
+            </div>
+          )
         ) : (
           <iframe
             srcDoc={localHtml}
