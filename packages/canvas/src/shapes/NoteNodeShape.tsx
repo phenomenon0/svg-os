@@ -25,6 +25,7 @@ export type NoteNodeShape = TLBaseShape<
     h: number;
     label: string;
     content: string;
+    renderedContent: string;
     mode: string;
   }
 >;
@@ -37,11 +38,12 @@ export class NoteNodeShapeUtil extends ShapeUtil<NoteNodeShape> {
     h: T.number,
     label: T.string,
     content: T.string,
+    renderedContent: T.string,
     mode: T.string,
   };
 
   getDefaultProps(): NoteNodeShape["props"] {
-    return { w: 320, h: 240, label: "Note", content: "", mode: "edit" };
+    return { w: 320, h: 240, label: "Note", content: "", renderedContent: "", mode: "edit" };
   }
 
   override getGeometry(shape: NoteNodeShape) {
@@ -82,8 +84,10 @@ export class NoteNodeShapeUtil extends ShapeUtil<NoteNodeShape> {
 
 function NoteComponent({ shape }: { shape: NoteNodeShape }) {
   const editor = useEditor();
-  const { w, h, label, content, mode } = shape.props;
+  const { w, h, label, content, renderedContent, mode } = shape.props;
   const [localContent, setLocalContent] = useState(content);
+  // Use renderedContent (interpolated by runtime) for display, fallback to raw content
+  const displayContent = renderedContent || localContent;
 
   if (content !== localContent) setLocalContent(content);
 
@@ -148,7 +152,7 @@ function NoteComponent({ shape }: { shape: NoteNodeShape }) {
               color: C.fgSoft,
               fontFamily: FONT.serif,
             }}
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(localContent) }}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(displayContent) }}
           />
         )}
 

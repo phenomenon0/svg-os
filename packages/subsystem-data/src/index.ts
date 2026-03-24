@@ -14,7 +14,7 @@ const jsonNodeDef: NodeDef = {
   ],
   execute(ctx: ExecContext) {
     const config = ctx.getConfig();
-    const raw = (config.json as string) || "{}";
+    const raw = (config.dataJson as string) || (config.json as string) || "{}";
     const upstream = ctx.getInput("in") as Record<string, unknown> | undefined;
     try {
       const parsed = JSON.parse(raw);

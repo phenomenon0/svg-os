@@ -21,6 +21,7 @@ type ShapeRecord = {
 type BindingRecord = {
   toId: string;
   props: Record<string, unknown>;
+  meta?: Record<string, unknown>;
 };
 
 const shapeToNode = new Map<string, string>();
@@ -53,6 +54,7 @@ const NODE_TYPE_TO_SHAPE: Record<string, string> = {
 
 const RUNTIME_MANAGED_PROPS: Record<string, string[]> = {
   "view-node": ["renderedContent"],
+  "note-node": ["renderedContent"],
   "ai-node": ["response", "status", "errorMessage"],
   "terminal-node": ["history"],
   "notebook-node": [],
@@ -260,6 +262,28 @@ function buildShapePatch(
     return null;
   }
 
+  if (nodeType === "view:note") {
+    const text = typeof data.text === "string" ? data.text : "";
+    if (text && text !== shape.props.renderedContent) {
+      return { renderedContent: text };
+    }
+    return null;
+  }
+
+  if (nodeType === "data:table") {
+    // Sync upstream data into table when connected
+    const rows = data.rows;
+    if (Array.isArray(rows) && rows.length > 0) {
+      try {
+        const json = JSON.stringify(rows);
+        if (json !== shape.props.dataJson) {
+          return { dataJson: json };
+        }
+      } catch { /* */ }
+    }
+    return null;
+  }
+
   if (nodeType === "data:ai") {
     const nextStatus = status === "running"
       ? "loading"
@@ -373,8 +397,8 @@ function resolvePortName(
 ): string | undefined {
   if (knownPorts.length === 0) return undefined;
 
-  // Best case: explicit port name in binding metadata
-  const portName = binding.props.portName;
+  // Best case: explicit port name in binding metadata (stored in meta or props)
+  const portName = binding.meta?.portName ?? binding.props.portName;
   if (typeof portName === "string" && knownPorts.includes(portName)) {
     return portName;
   }
@@ -390,8 +414,9 @@ function resolvePortName(
     }
   }
 
-  // Infer from portSide metadata
-  if (binding.props.portSide === (direction === "output" ? "right" : "left")) {
+  // Infer from portSide metadata (in meta or props)
+  const portSide = binding.meta?.portSide ?? binding.props.portSide;
+  if (portSide === (direction === "output" ? "right" : "left")) {
     if (knownPorts.length === 1) return knownPorts[0];
   }
 
