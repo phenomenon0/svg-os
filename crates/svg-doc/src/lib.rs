@@ -13,7 +13,7 @@ mod serialize;
 mod parse;
 mod text;
 
-pub use node::{Node, NodeId, Port, PortDirection};
+pub use node::{Node, NodeId, NodeRole, Port, PortDirection};
 pub use tag::SvgTag;
 pub use attr::{AttrKey, AttrValue, LengthUnit};
 pub use document::Document;

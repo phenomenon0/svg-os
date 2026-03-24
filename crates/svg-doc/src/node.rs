@@ -34,6 +34,25 @@ impl std::fmt::Display for NodeId {
     }
 }
 
+/// Semantic role of a node in the graph (orthogonal to NodeType/template).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum NodeRole {
+    /// Default: raw SVG element, no graph semantics.
+    Element,
+    /// Produces data (JSON, CSV, API endpoint, static).
+    Source,
+    /// Renders data visually (template-bound, dashboard, chart).
+    View,
+    /// Reshapes, filters, or computes on data (expression or AI-powered).
+    Transform,
+    /// Organizational grouping.
+    Container,
+}
+
+impl Default for NodeRole {
+    fn default() -> Self { Self::Element }
+}
+
 /// Direction hint for connector routing from a port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PortDirection {
@@ -76,6 +95,9 @@ pub struct Node {
     /// Diagram ports (anchor points for connectors).
     #[serde(default)]
     pub ports: Vec<Port>,
+    /// Semantic role in the graph (Source, View, Transform, etc).
+    #[serde(default)]
+    pub role: NodeRole,
 }
 
 impl Node {
@@ -91,6 +113,7 @@ impl Node {
             visible: true,
             locked: false,
             ports: Vec::new(),
+            role: NodeRole::Element,
         }
     }
 
@@ -106,6 +129,7 @@ impl Node {
             visible: true,
             locked: false,
             ports: Vec::new(),
+            role: NodeRole::Element,
         }
     }
 

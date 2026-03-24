@@ -392,6 +392,76 @@ fn layout_text_in_svg(svg: &str) -> Result<String, String> {
     Ok(svg_doc::doc_to_svg_string(&doc))
 }
 
+// ── AI Context engine functions ──────────────────────────────────────────────
+
+/// Build a graph manifest from an SVG string + optional connector state.
+pub fn build_manifest_from_svg(
+    svg: &str,
+    connectors_json: Option<&str>,
+) -> Result<svg_runtime::GraphManifest, String> {
+    let doc = svg_doc::doc_from_svg_string(svg)
+        .map_err(|e| format!("SVG parse error: {}", e))?;
+
+    let connectors: ConnectorStore = connectors_json
+        .and_then(|json| serde_json::from_str(json).ok())
+        .unwrap_or_default();
+
+    let bindings = svg_runtime::BindingEngine::new();
+    let registry = svg_runtime::NodeTypeRegistry::new();
+
+    Ok(svg_runtime::build_manifest(&doc, &connectors, &bindings, &registry))
+}
+
+/// Build node context from an SVG string + node ID + optional connector state.
+pub fn build_context_from_svg(
+    svg: &str,
+    node_id_str: &str,
+    connectors_json: Option<&str>,
+) -> Result<svg_runtime::NodeContext, String> {
+    let doc = svg_doc::doc_from_svg_string(svg)
+        .map_err(|e| format!("SVG parse error: {}", e))?;
+
+    let node_id = svg_doc::NodeId::from_str(node_id_str)
+        .ok_or_else(|| format!("Invalid node ID: {}", node_id_str))?;
+
+    let connectors: ConnectorStore = connectors_json
+        .and_then(|json| serde_json::from_str(json).ok())
+        .unwrap_or_default();
+
+    let bindings = svg_runtime::BindingEngine::new();
+    let registry = svg_runtime::NodeTypeRegistry::new();
+
+    svg_runtime::build_node_context(node_id, &doc, &connectors, &bindings, &registry)
+        .ok_or_else(|| format!("Node not found: {}", node_id_str))
+}
+
+/// Suggest connection between two nodes from SVG + IDs.
+pub fn suggest_connection_from_svg(
+    svg: &str,
+    from_id_str: &str,
+    to_id_str: &str,
+    connectors_json: Option<&str>,
+) -> Result<svg_runtime::ConnectionSuggestion, String> {
+    let doc = svg_doc::doc_from_svg_string(svg)
+        .map_err(|e| format!("SVG parse error: {}", e))?;
+
+    let from_id = svg_doc::NodeId::from_str(from_id_str)
+        .ok_or_else(|| format!("Invalid from ID: {}", from_id_str))?;
+    let to_id = svg_doc::NodeId::from_str(to_id_str)
+        .ok_or_else(|| format!("Invalid to ID: {}", to_id_str))?;
+
+    let connectors: ConnectorStore = connectors_json
+        .and_then(|json| serde_json::from_str(json).ok())
+        .unwrap_or_default();
+
+    let bindings = svg_runtime::BindingEngine::new();
+    let registry = svg_runtime::NodeTypeRegistry::new();
+
+    Ok(svg_runtime::suggest_connection(
+        from_id, to_id, &doc, &connectors, &bindings, &registry,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

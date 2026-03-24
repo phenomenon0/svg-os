@@ -1309,6 +1309,123 @@ pub fn svg_os_register_text_measurer(callback: js_sys::Function) {
     svg_text::set_text_measure_fn(measure_fn);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// AI Context API: graph manifest, node context, connection suggestions
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Get a compact semantic map of the entire document graph.
+#[wasm_bindgen]
+pub fn svg_os_get_graph_manifest() -> Result<String, JsValue> {
+    with_engine(|engine| {
+        let manifest = svg_runtime::build_manifest(
+            &engine.doc,
+            &engine.connectors,
+            &engine.bindings,
+            &engine.node_types,
+        );
+        serde_json::to_string(&manifest).unwrap_or_else(|_| "{}".into())
+    })
+}
+
+/// Get focused context for a single node.
+#[wasm_bindgen]
+pub fn svg_os_get_node_context(node_id: &str) -> Result<String, JsValue> {
+    let nid = NodeId::from_str(node_id)
+        .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
+    with_engine(|engine| {
+        match svg_runtime::build_node_context(
+            nid,
+            &engine.doc,
+            &engine.connectors,
+            &engine.bindings,
+            &engine.node_types,
+        ) {
+            Some(ctx) => serde_json::to_string(&ctx).unwrap_or_else(|_| "null".into()),
+            None => "null".into(),
+        }
+    })
+}
+
+/// Get connection suggestions for linking two nodes.
+#[wasm_bindgen]
+pub fn svg_os_suggest_connection(from_id: &str, to_id: &str) -> Result<String, JsValue> {
+    let from = NodeId::from_str(from_id)
+        .ok_or_else(|| JsValue::from_str("Invalid from node ID"))?;
+    let to = NodeId::from_str(to_id)
+        .ok_or_else(|| JsValue::from_str("Invalid to node ID"))?;
+    with_engine(|engine| {
+        let suggestion = svg_runtime::suggest_connection(
+            from,
+            to,
+            &engine.doc,
+            &engine.connectors,
+            &engine.bindings,
+            &engine.node_types,
+        );
+        serde_json::to_string(&suggestion).unwrap_or_else(|_| "{}".into())
+    })
+}
+
+/// Get pending AI evaluations that need to be resolved by the TypeScript layer.
+#[wasm_bindgen]
+pub fn svg_os_get_pending_ai_evals() -> Result<String, JsValue> {
+    with_engine(|engine| {
+        let pending = engine.bindings.pending_ai_evals();
+        serde_json::to_string(pending).unwrap_or_else(|_| "[]".into())
+    })
+}
+
+/// Resolve an AI evaluation by providing the result data.
+/// After resolving, call evaluate_data_flow again to propagate downstream.
+#[wasm_bindgen]
+pub fn svg_os_resolve_ai_eval(node_id: &str, result_json: &str) -> Result<(), JsValue> {
+    let nid = NodeId::from_str(node_id)
+        .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
+    let result: serde_json::Value = serde_json::from_str(result_json)
+        .map_err(|err| JsValue::from_str(&format!("Invalid result JSON: {}", err)))?;
+    try_with_engine(|engine| {
+        engine.bindings.set_node_data(nid, result);
+        Ok(())
+    })
+}
+
+/// Set node data directly (for external data injection).
+#[wasm_bindgen]
+pub fn svg_os_set_node_data(node_id: &str, data_json: &str) -> Result<(), JsValue> {
+    let nid = NodeId::from_str(node_id)
+        .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
+    let data: serde_json::Value = serde_json::from_str(data_json)
+        .map_err(|err| JsValue::from_str(&format!("Invalid data JSON: {}", err)))?;
+    try_with_engine(|engine| {
+        engine.bindings.set_node_data(nid, data);
+        Ok(())
+    })
+}
+
+/// Set the semantic role of a node.
+#[wasm_bindgen]
+pub fn svg_os_set_node_role(node_id: &str, role: &str) -> Result<(), JsValue> {
+    let nid = NodeId::from_str(node_id)
+        .ok_or_else(|| JsValue::from_str("Invalid node ID"))?;
+    let node_role = match role {
+        "Element" => svg_doc::NodeRole::Element,
+        "Source" => svg_doc::NodeRole::Source,
+        "View" => svg_doc::NodeRole::View,
+        "Transform" => svg_doc::NodeRole::Transform,
+        "Container" => svg_doc::NodeRole::Container,
+        _ => return Err(JsValue::from_str("Invalid role. Expected: Element, Source, View, Transform, Container")),
+    };
+    try_with_engine(|engine| {
+        match engine.doc.get_mut(nid) {
+            Some(node) => {
+                node.role = node_role;
+                Ok(())
+            }
+            None => Err(JsValue::from_str("Node not found")),
+        }
+    })
+}
+
 // ── Non-WASM test support ───────────────────────────────────────────────────
 
 #[cfg(not(target_arch = "wasm32"))]

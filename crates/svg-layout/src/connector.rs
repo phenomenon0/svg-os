@@ -98,6 +98,16 @@ impl ConnectorStore {
         self.connectors.is_empty()
     }
 
+    /// Get the set of all node IDs referenced by any connector.
+    pub fn connected_node_ids(&self) -> std::collections::HashSet<NodeId> {
+        let mut ids = std::collections::HashSet::new();
+        for c in &self.connectors {
+            ids.insert(c.from.0);
+            ids.insert(c.to.0);
+        }
+        ids
+    }
+
     /// Find all connectors flowing INTO a node.
     pub fn incoming(&self, node_id: NodeId) -> Vec<&Connector> {
         self.connectors.iter().filter(|c| c.to.0 == node_id).collect()

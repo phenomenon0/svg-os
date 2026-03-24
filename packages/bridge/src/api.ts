@@ -285,3 +285,42 @@ export function evaluateDataFlow(data?: Record<string, unknown>): void {
 export function getNodeData(nodeId: string): unknown {
   return JSON.parse(getWasm().svg_os_get_node_data(nodeId));
 }
+
+// ── AI Context ────────────────────────────────────────────────────────────────
+
+import type { GraphManifest, NodeContext, ConnectionSuggestion, NodeRole, PendingAiEval } from "./types.js";
+
+/** Get a compact semantic map of the entire document graph. */
+export function getGraphManifest(): GraphManifest {
+  return JSON.parse(getWasm().svg_os_get_graph_manifest());
+}
+
+/** Get focused context for a single node. */
+export function getNodeContext(nodeId: string): NodeContext | null {
+  return JSON.parse(getWasm().svg_os_get_node_context(nodeId));
+}
+
+/** Get connection suggestions for linking two nodes. */
+export function suggestConnection(fromId: string, toId: string): ConnectionSuggestion {
+  return JSON.parse(getWasm().svg_os_suggest_connection(fromId, toId));
+}
+
+/** Set the semantic role of a node. */
+export function setNodeRole(nodeId: string, role: NodeRole): void {
+  getWasm().svg_os_set_node_role(nodeId, role);
+}
+
+/** Get pending AI evaluations that need external resolution. */
+export function getPendingAiEvals(): PendingAiEval[] {
+  return JSON.parse(getWasm().svg_os_get_pending_ai_evals());
+}
+
+/** Resolve an AI evaluation with result data. */
+export function resolveAiEval(nodeId: string, result: unknown): void {
+  getWasm().svg_os_resolve_ai_eval(nodeId, JSON.stringify(result));
+}
+
+/** Set node data directly (for external data injection). */
+export function setNodeData(nodeId: string, data: unknown): void {
+  getWasm().svg_os_set_node_data(nodeId, JSON.stringify(data));
+}

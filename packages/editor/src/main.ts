@@ -11,13 +11,14 @@ import {
   importSvg, exportSvg, getElement,
   bind, evaluateBindings, applyTheme, repeatTemplate,
   cloneNode, groupNodes, ungroupNode,
-  addDefaultPorts, getPorts, addConnector, updateConnectors, autoLayout,
+  addDefaultPorts, getPorts, addConnector, removeConnector, updateConnectors, autoLayout,
   generateDiagram, getNodeInfo,
   instantiateNodeType,
   evaluateDataFlow,
 } from "@svg-os/bridge";
 import type { Binding, Theme, Port } from "@svg-os/bridge";
 import { initPalette, getPlacingType, placeNode, cancelPlacing } from "./node-palette.js";
+import { showConnectionAssistant, dismissAssistant } from "./connection-assistant.js";
 
 // ── State ───────────────────────────────────────────────────────────────────
 
@@ -79,6 +80,48 @@ async function init() {
     if (new URLSearchParams(window.location.search).has("demo")) {
       seedDemoContent();
     }
+
+    // Expose AI-queryable global API for agents/devtools
+    (window as any).svgOs = {
+      /** Get current viewport state. */
+      getViewport: () => {
+        const rect = container.getBoundingClientRect();
+        const vbW = rect.width / viewTransform.scale;
+        const vbH = rect.height / viewTransform.scale;
+        const vbX = -viewTransform.x / viewTransform.scale;
+        const vbY = -viewTransform.y / viewTransform.scale;
+        return {
+          panX: viewTransform.x,
+          panY: viewTransform.y,
+          zoom: viewTransform.scale,
+          viewBox: { x: vbX, y: vbY, width: vbW, height: vbH },
+          canvasWidth: rect.width,
+          canvasHeight: rect.height,
+        };
+      },
+      /** Pan to center on a document coordinate. */
+      panTo: (docX: number, docY: number) => {
+        const rect = container.getBoundingClientRect();
+        viewTransform.x = -(docX * viewTransform.scale - rect.width / 2);
+        viewTransform.y = -(docY * viewTransform.scale - rect.height / 2);
+        applyViewTransform();
+      },
+      /** Set zoom level (1.0 = 100%). */
+      setZoom: (level: number) => {
+        viewTransform.scale = Math.max(0.1, Math.min(10, level));
+        applyViewTransform();
+      },
+      /** Zoom to fit all content. */
+      zoomToFit: () => {
+        // Trigger the existing Ctrl+0 / "Zoom to Fit" behavior
+        viewTransform = { x: 0, y: 0, scale: 1 };
+        applyViewTransform();
+      },
+      /** Get selected node ID. */
+      getSelectedNode: () => selectedNodeId,
+      /** Get current tool. */
+      getCurrentTool: () => currentTool,
+    };
   } catch (e) {
     statusText.textContent = `Failed to load WASM: ${e}`;
     console.error(e);
@@ -781,15 +824,43 @@ function onPointerUp(e: PointerEvent) {
     const pt = getSvgPoint(e.clientX, e.clientY);
     const hit = findNearestPort(pt, 16);
     if (hit && hit.nodeId !== connectorSource.nodeId) {
-      addConnector({
-        from: [connectorSource.nodeId, connectorSource.portName],
-        to: [hit.nodeId, hit.port.name],
+      const fromId = connectorSource.nodeId;
+      const toId = hit.nodeId;
+      const fromPort = connectorSource.portName;
+      const toPort = hit.port.name;
+
+      // Create connector with PassThrough as default
+      const pathNodeId = addConnector({
+        from: [fromId, fromPort],
+        to: [toId, toPort],
         routing: "Straight",
         dataFlow: "PassThrough",
       });
+
       // Evaluate data flow so downstream nodes update
       try { evaluateDataFlow(); } catch { /* ignore if no bindings */ }
       render();
+
+      // Show connection assistant popup
+      showConnectionAssistant(fromId, toId, e.clientX, e.clientY, {
+        onApply: (dataFlow) => {
+          // If user picked something other than PassThrough, recreate connector
+          if (dataFlow !== "PassThrough") {
+            removeConnector(pathNodeId);
+            addConnector({
+              from: [fromId, fromPort],
+              to: [toId, toPort],
+              routing: "Straight",
+              dataFlow,
+            });
+            try { evaluateDataFlow(); } catch { /* ignore */ }
+            render();
+          }
+        },
+        onDismiss: () => {
+          // Keep the PassThrough connector as-is
+        },
+      });
     }
     isConnecting = false;
     connectorSource = null;

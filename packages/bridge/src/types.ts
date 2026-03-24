@@ -93,3 +93,132 @@ export interface ConnectorInfo {
   routing: ConnectorRouting;
   label: NodeId | null;
 }
+
+// ── AI Context types ──────────────────────────────────────────────────────────
+
+/** Semantic role of a node in the graph. */
+export type NodeRole = "Element" | "Source" | "View" | "Transform" | "Container";
+
+/** Bindable slot on a node type. */
+export interface SlotDef {
+  field: string;
+  bind_type: string;
+  target_attr: string;
+  default_value?: string;
+}
+
+/** Compact semantic map of the entire document graph. */
+export interface GraphManifest {
+  nodes: ManifestNode[];
+  edges: ManifestEdge[];
+  summary: GraphSummary;
+  /** Viewport state (populated by editor, null from raw WASM). */
+  viewport?: ViewportInfo;
+}
+
+/** Lightweight node entry in the manifest. */
+export interface ManifestNode {
+  id: NodeId;
+  name: string | null;
+  role: NodeRole;
+  node_type_id: string | null;
+  category: string | null;
+  slots: SlotDef[];
+  output_fields: string[];
+  has_data: boolean;
+  position: [number, number];
+}
+
+/** Edge entry in the manifest. */
+export interface ManifestEdge {
+  from_node: NodeId;
+  from_port: string;
+  to_node: NodeId;
+  to_port: string;
+  data_flow: DataFlow;
+  connector_id: NodeId;
+}
+
+/** Summary counts for the graph. */
+export interface GraphSummary {
+  total_nodes: number;
+  source_count: number;
+  view_count: number;
+  transform_count: number;
+  container_count: number;
+  element_count: number;
+  edge_count: number;
+  data_flow_edge_count: number;
+}
+
+/** Focused context for a single node. */
+export interface NodeContext {
+  id: NodeId;
+  name: string | null;
+  role: NodeRole;
+  node_type_id: string | null;
+  input_slots: SlotDef[];
+  output_shape: unknown | null;
+  incoming: ConnectionInfoDetail[];
+  outgoing: ConnectionInfoDetail[];
+  current_data: unknown | null;
+  depth: number;
+  upstream_count: number;
+  downstream_count: number;
+}
+
+/** Info about a connection to/from a node. */
+export interface ConnectionInfoDetail {
+  node_id: NodeId;
+  node_name: string | null;
+  port: string;
+  data_flow: DataFlow;
+}
+
+/** AI-computed suggestion for connecting two nodes. */
+export interface ConnectionSuggestion {
+  source_output: unknown | null;
+  target_slots: SlotDef[];
+  suggested_mappings: SuggestedMapping[];
+  suggested_data_flow: DataFlow;
+}
+
+/** A single field-to-slot mapping suggestion. */
+export interface SuggestedMapping {
+  source_field: string;
+  target_slot: string;
+  confidence: number;
+  reason: string;
+}
+
+/** Viewport state — where the user is looking on the canvas. */
+export interface ViewportInfo {
+  /** Pan offset in screen pixels. */
+  panX: number;
+  panY: number;
+  /** Zoom level (1.0 = 100%). */
+  zoom: number;
+  /** Visible area in document coordinates. */
+  viewBox: { x: number; y: number; width: number; height: number };
+  /** Screen/canvas size in pixels. */
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
+/** AI transform configuration for a DataSource. */
+export interface AiTransformConfig {
+  prompt_template: string;
+  model?: string;
+  max_tokens?: number;
+  output_schema?: unknown;
+}
+
+/** A pending AI evaluation that needs external resolution. */
+export interface PendingAiEval {
+  node_id: string;
+  input_data: unknown;
+  prompt_template: string;
+  model?: string;
+  max_tokens?: number;
+  output_schema?: unknown;
+}

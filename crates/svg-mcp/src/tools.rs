@@ -66,6 +66,39 @@ pub struct DescribeTemplateParams {
     pub template_svg: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct GetManifestParams {
+    /// SVG document string
+    pub svg: String,
+    /// Optional serialized connector store JSON (from getConnectors)
+    #[serde(default)]
+    pub connectors_json: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct GetNodeContextParams {
+    /// SVG document string
+    pub svg: String,
+    /// Node ID to query
+    pub node_id: String,
+    /// Optional serialized connector store JSON
+    #[serde(default)]
+    pub connectors_json: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct SuggestConnectionParams {
+    /// SVG document string
+    pub svg: String,
+    /// Source node ID
+    pub from_id: String,
+    /// Target node ID
+    pub to_id: String,
+    /// Optional serialized connector store JSON
+    #[serde(default)]
+    pub connectors_json: Option<String>,
+}
+
 // ── Tool implementations ─────────────────────────────────────────────────
 
 #[tool_router]
@@ -147,6 +180,66 @@ impl SvgMcpServer {
         match engine::describe_template(&params.0.template_svg) {
             Ok(desc) => {
                 let json = serde_json::to_string_pretty(&desc).unwrap_or_else(|_| "{}".into());
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(
+        name = "get_graph_manifest",
+        description = "Get a compact semantic map of the entire SVG document graph. Returns all graph-relevant nodes (with role, type, slots, position), all edges (with data flow info), and summary counts. Use this first to understand what exists in a document before drilling into individual nodes."
+    )]
+    pub async fn get_graph_manifest(
+        &self,
+        params: Parameters<GetManifestParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match engine::build_manifest_from_svg(&params.0.svg, params.0.connectors_json.as_deref()) {
+            Ok(manifest) => {
+                let json = serde_json::to_string_pretty(&manifest).unwrap_or_else(|_| "{}".into());
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(
+        name = "get_node_context",
+        description = "Get focused context for a single node in the document. Returns the node's role, type, input slots, output shape, incoming/outgoing connections, current data state, and graph depth. Use after get_graph_manifest to drill into a specific node."
+    )]
+    pub async fn get_node_context(
+        &self,
+        params: Parameters<GetNodeContextParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match engine::build_context_from_svg(
+            &params.0.svg,
+            &params.0.node_id,
+            params.0.connectors_json.as_deref(),
+        ) {
+            Ok(ctx) => {
+                let json = serde_json::to_string_pretty(&ctx).unwrap_or_else(|_| "null".into());
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(
+        name = "suggest_connection",
+        description = "Get AI-computed suggestions for connecting two nodes. Returns the source node's output data, target node's input slots, suggested field-to-slot mappings with confidence scores, and a recommended DataFlow type. Use when helping a user wire up connections between nodes."
+    )]
+    pub async fn suggest_connection(
+        &self,
+        params: Parameters<SuggestConnectionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match engine::suggest_connection_from_svg(
+            &params.0.svg,
+            &params.0.from_id,
+            &params.0.to_id,
+            params.0.connectors_json.as_deref(),
+        ) {
+            Ok(suggestion) => {
+                let json = serde_json::to_string_pretty(&suggestion).unwrap_or_else(|_| "{}".into());
                 Ok(CallToolResult::success(vec![Content::text(json)]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),

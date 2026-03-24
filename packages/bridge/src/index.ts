@@ -29,6 +29,8 @@ export {
   registerNodeType, listNodeTypes, getNodeType, instantiateNodeType,
   evaluateDataFlow, getNodeData,
   renderTemplateInline,
+  getGraphManifest, getNodeContext, suggestConnection, setNodeRole,
+  getPendingAiEvals, resolveAiEval, setNodeData,
 } from "./api.js";
 
 export { applyOps, resetElementMap, getElement } from "./dom-apply.js";
@@ -37,4 +39,8 @@ export type {
   NodeId, SvgTagName, AttrMap, SvgDomOp,
   Effect, Constraint, Binding, Theme,
   Port, PortDirection, ConnectorDef, ConnectorRouting, ConnectorInfo,
+  NodeRole, SlotDef, DataFlow, ViewportInfo,
+  GraphManifest, ManifestNode, ManifestEdge, GraphSummary,
+  NodeContext, ConnectionInfoDetail, ConnectionSuggestion, SuggestedMapping,
+  AiTransformConfig, PendingAiEval,
 } from "./types.js";

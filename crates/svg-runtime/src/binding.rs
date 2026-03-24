@@ -29,6 +29,21 @@ pub enum DataSource {
     Static { value: Value },
     /// Expression evaluated against current data context.
     Expression { expr: String },
+    /// AI-powered transform: input comes from upstream, processed by LLM.
+    /// Evaluated asynchronously by the TypeScript layer.
+    AiTransform {
+        /// Prompt template with {{field}} interpolation.
+        prompt_template: String,
+        /// Optional model override.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        /// Optional max tokens.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_tokens: Option<u32>,
+        /// Expected output JSON schema (hint for the LLM).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        output_schema: Option<Value>,
+    },
 }
 
 /// Maps a data field to a node attribute.
@@ -64,6 +79,23 @@ pub struct Binding {
     pub fallback: Option<Value>,
 }
 
+/// A pending AI evaluation that needs to be resolved by the TypeScript layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingAiEval {
+    /// The node that needs AI evaluation.
+    pub node_id: NodeId,
+    /// Input data available to the AI prompt.
+    pub input_data: Value,
+    /// AI transform configuration.
+    pub prompt_template: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
+}
+
 /// The binding engine: manages all active data bindings.
 #[derive(Debug, Clone, Default)]
 pub struct BindingEngine {
@@ -72,6 +104,8 @@ pub struct BindingEngine {
     expr_cache: HashMap<String, CompiledExpr>,
     /// Computed data per node (populated by evaluate_with_flow).
     node_data: HashMap<NodeId, Value>,
+    /// Pending AI evaluations (populated during evaluate_with_flow).
+    pending_ai: Vec<PendingAiEval>,
 }
 
 // Custom Serialize/Deserialize that skips expr_cache
@@ -84,7 +118,7 @@ impl Serialize for BindingEngine {
 impl<'de> Deserialize<'de> for BindingEngine {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let bindings = Vec::<Binding>::deserialize(deserializer)?;
-        Ok(Self { bindings, expr_cache: HashMap::new(), node_data: HashMap::new() })
+        Ok(Self { bindings, expr_cache: HashMap::new(), node_data: HashMap::new(), pending_ai: Vec::new() })
     }
 }
 
@@ -93,6 +127,7 @@ impl BindingEngine {
         Self {
             bindings: Vec::new(),
             expr_cache: HashMap::new(),
+            pending_ai: Vec::new(),
             node_data: HashMap::new(),
         }
     }
@@ -110,6 +145,11 @@ impl BindingEngine {
     /// Get all bindings.
     pub fn bindings(&self) -> &[Binding] {
         &self.bindings
+    }
+
+    /// Get the set of node IDs that have bindings targeting them.
+    pub fn bound_node_ids(&self) -> std::collections::HashSet<svg_doc::NodeId> {
+        self.bindings.iter().map(|b| b.target).collect()
     }
 
     /// Pre-compile all expressions in registered bindings.
@@ -184,6 +224,11 @@ impl BindingEngine {
                     } else {
                         resolve_field(data, expr).unwrap_or(Value::Null)
                     }
+                }
+                DataSource::AiTransform { .. } => {
+                    // AI transforms are handled in evaluate_with_flow, not here.
+                    // Skip this binding in simple evaluate context.
+                    continue;
                 }
             };
 
@@ -277,6 +322,21 @@ impl BindingEngine {
         self.node_data.clear();
     }
 
+    /// Set node data directly (used to resolve AI transforms).
+    pub fn set_node_data(&mut self, node: NodeId, data: Value) {
+        self.node_data.insert(node, data);
+    }
+
+    /// Get pending AI evaluations (populated by evaluate_with_flow).
+    pub fn pending_ai_evals(&self) -> &[PendingAiEval] {
+        &self.pending_ai
+    }
+
+    /// Take and clear pending AI evaluations.
+    pub fn take_pending_ai_evals(&mut self) -> Vec<PendingAiEval> {
+        std::mem::take(&mut self.pending_ai)
+    }
+
     /// Evaluate bindings with data flowing through connectors.
     ///
     /// 1. Topologically sorts nodes by connector graph
@@ -290,7 +350,14 @@ impl BindingEngine {
         external_data: &Value,
         connectors: &svg_layout::ConnectorStore,
     ) {
-        self.node_data.clear();
+        // Preserve node_data for AI transform nodes (resolved externally).
+        // Clear data for all other nodes.
+        let ai_node_ids: std::collections::HashSet<NodeId> = self.bindings.iter()
+            .filter(|b| matches!(b.source, DataSource::AiTransform { .. }))
+            .map(|b| b.target)
+            .collect();
+        self.node_data.retain(|id, _| ai_node_ids.contains(id));
+        self.pending_ai.clear();
 
         // Collect all bound node IDs
         let bound_nodes: Vec<NodeId> = self.bindings.iter().map(|b| b.target).collect();
@@ -372,6 +439,29 @@ impl BindingEngine {
                     } else {
                         resolve_field(external_data, expr).unwrap_or(Value::Null)
                     }
+                }
+                DataSource::AiTransform { prompt_template, model, max_tokens, output_schema } => {
+                    // Build input from upstream data
+                    let ai_input = if input_data.is_empty() {
+                        external_data.clone()
+                    } else {
+                        Value::Object(input_data)
+                    };
+
+                    // Store as pending — TS layer will resolve asynchronously
+                    self.pending_ai.push(PendingAiEval {
+                        node_id: *node_id,
+                        input_data: ai_input,
+                        prompt_template: prompt_template.clone(),
+                        model: model.clone(),
+                        max_tokens: *max_tokens,
+                        output_schema: output_schema.clone(),
+                    });
+
+                    // Skip normal binding evaluation for this node.
+                    // If previously resolved, node_data already has the result
+                    // and downstream nodes can use it.
+                    continue;
                 }
             };
 

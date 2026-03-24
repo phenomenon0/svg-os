@@ -69,6 +69,17 @@ export interface SvgOsWasm {
 
   // Inline template rendering (standalone, no Engine state needed)
   svg_os_render_template_inline(template_svg: string, data_json: string): string;
+
+  // AI Context
+  svg_os_get_graph_manifest(): string;
+  svg_os_get_node_context(node_id: string): string;
+  svg_os_suggest_connection(from_id: string, to_id: string): string;
+  svg_os_set_node_role(node_id: string, role: string): void;
+
+  // AI Transform
+  svg_os_get_pending_ai_evals(): string;
+  svg_os_resolve_ai_eval(node_id: string, result_json: string): void;
+  svg_os_set_node_data(node_id: string, data_json: string): void;
 }
 
 let wasmModule: SvgOsWasm | null = null;
