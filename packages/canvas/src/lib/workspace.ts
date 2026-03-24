@@ -505,10 +505,6 @@ function buildHackerPreset(): PresetResult {
               output: "",
             },
           ]),
-          status: "idle",
-          runNonce: 0,
-          runMode: "all",
-          activeCellId: "c1",
         },
       },
       {

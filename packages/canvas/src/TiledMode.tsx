@@ -130,9 +130,11 @@ export function applyTiledLayout(
 
   // Reposition shapes
   for (const [shapeId, rect] of panelMap) {
+    const shape = editor.getShape(shapeId as never);
+    if (!shape) continue;
     editor.updateShape({
       id: shapeId as never,
-      type: editor.getShape(shapeId as never)?.type as never,
+      type: shape.type as never,
       x: rect.x,
       y: rect.y,
       props: { w: rect.w, h: rect.h } as never,
