@@ -22,7 +22,7 @@ import {
 import { Port } from "../Port";
 import { EditableLabel } from "../EditableLabel";
 import { C, FONT } from "../theme";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 
 export type WebViewShape = TLBaseShape<
   "web-view",
@@ -247,65 +247,6 @@ function WebViewContent({ shape }: { shape: WebViewShape }) {
     cleanupRef.current = () => el.removeEventListener("pointerdown", handler, { capture: true });
   }, []);
 
-  // ── X-Frame-Options bypass: fetch via CORS proxy and inject as srcdoc ──
-  const [proxiedHtml, setProxiedHtml] = useState<string | null>(null);
-  const [proxyLoading, setProxyLoading] = useState(false);
-  const proxyAttemptedRef = useRef<string>("");
-
-  const fetchViaProxy = useCallback(async (targetUrl: string) => {
-    if (!targetUrl || targetUrl === "about:blank" || !targetUrl.startsWith("http")) return;
-    if (proxyAttemptedRef.current === targetUrl) return;
-    proxyAttemptedRef.current = targetUrl;
-    setProxyLoading(true);
-    setProxiedHtml(null);
-
-    const proxies = [
-      "https://api.allorigins.win/raw?url=",
-      "https://api.codetabs.com/v1/proxy/?quest=",
-    ];
-
-    for (const proxy of proxies) {
-      try {
-        const resp = await fetch(proxy + encodeURIComponent(targetUrl));
-        if (!resp.ok) continue;
-        const html = await resp.text();
-        if (!html || html.length < 50) continue;
-        // Inject <base href> so relative URLs resolve correctly
-        const patched = html.replace(
-          /<head([^>]*)>/i,
-          `<head$1><base href="${targetUrl}">`,
-        );
-        setProxiedHtml(patched);
-        setProxyLoading(false);
-        return;
-      } catch { /* try next proxy */ }
-    }
-    setProxyLoading(false);
-  }, []);
-
-  // When iframe fails to load (X-Frame-Options), fall back to proxy
-  const handleIframeError = useCallback(() => {
-    if (mode === "url" && activeUrl && activeUrl !== "about:blank") {
-      fetchViaProxy(activeUrl);
-    }
-  }, [mode, activeUrl, fetchViaProxy]);
-
-  // Proactively fetch via proxy immediately — don't wait for iframe failure
-  // (iframe onError doesn't fire for X-Frame-Options, and waiting is slow)
-  useEffect(() => {
-    if (mode !== "url" || !activeUrl || activeUrl === "about:blank") return;
-    // Fetch via proxy immediately in parallel with direct iframe
-    fetchViaProxy(activeUrl);
-  }, [activeUrl, mode, fetchViaProxy]);
-
-  // Reset proxy state when URL changes
-  useEffect(() => {
-    if (proxyAttemptedRef.current && proxyAttemptedRef.current !== activeUrl) {
-      setProxiedHtml(null);
-      proxyAttemptedRef.current = "";
-    }
-  }, [activeUrl]);
-
   const barHeight = 32;
   const isHtmlMode = mode === "html" || mode === "code";
 
@@ -417,45 +358,20 @@ function WebViewContent({ shape }: { shape: WebViewShape }) {
             }}
           />
         ) : mode === "url" ? (
-          proxiedHtml ? (
-            <iframe
-              srcDoc={proxiedHtml}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-presentation"
-              style={{
-                border: "none",
-                width: "100%",
-                height: `calc(100% - ${barHeight}px)`,
-                background: "#ffffff",
-              }}
-              title={`WebView (proxied): ${activeUrl}`}
-            />
-          ) : (
-            <>
-              <iframe
-                src={activeUrl}
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation allow-modals allow-presentation allow-downloads"
-                allow="accelerometer; camera; encrypted-media; fullscreen; geolocation; gyroscope; microphone; midi; payment; usb; xr-spatial-tracking; webgl; webgl2"
-                // @ts-ignore — credentialless bypasses parent COEP
-                credentialless=""
-                onError={handleIframeError}
-                style={{
-                  border: "none",
-                  width: "100%",
-                  height: `calc(100% - ${barHeight}px)`,
-                  background: "#ffffff",
-                }}
-                title={`WebView: ${activeUrl}`}
-              />
-              {proxyLoading && (
-                <div style={{
-                  position: "absolute", bottom: barHeight + 4, left: 8,
-                  fontSize: 9, color: C.faint, fontFamily: FONT.mono,
-                }}>
-                  Loading via proxy...
-                </div>
-              )}
-            </>
-          )
+          <iframe
+            src={activeUrl}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation allow-modals allow-presentation allow-downloads"
+            allow="accelerometer; camera; encrypted-media; fullscreen; geolocation; gyroscope; microphone; midi; payment; usb; xr-spatial-tracking; webgl; webgl2"
+            // @ts-ignore — credentialless bypasses parent COEP
+            credentialless=""
+            style={{
+              border: "none",
+              width: "100%",
+              height: `calc(100% - ${barHeight}px)`,
+              background: "#ffffff",
+            }}
+            title={`WebView: ${activeUrl}`}
+          />
         ) : (
           <iframe
             srcDoc={localHtml}
