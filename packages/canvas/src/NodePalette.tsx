@@ -227,7 +227,7 @@ export function NodePalette() {
           viewType: "svg-template",
           typeId,
           renderedContent: rendered,
-          variant: "", htmlTitle: "", htmlContent: "",
+          htmlContent: "",
           data: JSON.stringify(dummyData),
         },
       });

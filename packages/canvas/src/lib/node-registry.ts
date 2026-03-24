@@ -83,11 +83,7 @@ export function defaultPropsForShape(shapeType: string): Record<string, unknown>
     case "notebook-node":
       return {
         w: 400, h: 320, label: "Notebook",
-        cells: JSON.stringify([{ id: "c1", type: "code", lang: "python", source: "print('Hello!')\n2 ** 10", output: "" }]),
-        status: "idle",
-        runNonce: 0,
-        runMode: "all",
-        activeCellId: "c1",
+        cells: JSON.stringify([{ id: "c1", type: "code", lang: "js", source: "", output: "" }]),
       };
     case "data-node":
       return { w: 300, h: 200, dataJson: '{\n  "name": "Example",\n  "score": 95\n}', label: "Data" };
@@ -99,6 +95,8 @@ export function defaultPropsForShape(shapeType: string): Record<string, unknown>
       return { w: 400, h: 320, label: "AI", prompt: "", response: "", model: getModel(), status: "idle", errorMessage: "", runNonce: 0 };
     case "note-node":
       return { w: 320, h: 240, label: "Note", content: "", mode: "edit" };
+    case "media-node":
+      return { w: 320, h: 260, label: "Media", mediaType: "none", src: "", filename: "", mimeType: "", fileSize: 0 };
     case "web-view":
       return { w: 480, h: 360, url: "https://femiadeniran.com", label: "WebView", mode: "url", htmlContent: "" };
     default:

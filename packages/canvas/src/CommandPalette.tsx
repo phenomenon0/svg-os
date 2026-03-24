@@ -207,7 +207,7 @@ export function CommandPalette({
               viewType: "svg-template",
               typeId,
               renderedContent: nt.template_svg,
-              variant: "", htmlTitle: "", htmlContent: "",
+              htmlContent: "",
               data: "{}",
             },
           });
