@@ -37,6 +37,7 @@ const SHAPE_TO_NODE_TYPE: Record<string, string> = {
   "terminal-node": "sys:terminal",
   "notebook-node": "sys:notebook",
   "ai-node": "data:ai",
+  "media-node": "view:media",
   "compact-node": "",
 };
 
@@ -50,6 +51,7 @@ const NODE_TYPE_TO_SHAPE: Record<string, string> = {
   "view:webview": "web-view",
   "sys:terminal": "terminal-node",
   "sys:notebook": "notebook-node",
+  "view:media": "media-node",
 };
 
 const RUNTIME_MANAGED_PROPS: Record<string, string[]> = {

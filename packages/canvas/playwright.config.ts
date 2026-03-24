@@ -2,14 +2,14 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  timeout: 120_000, // Pyodide takes time to load
+  timeout: 120_000,
   use: {
-    baseURL: "http://localhost:5190",
+    baseURL: "http://localhost:5199",
     headless: true,
   },
   webServer: {
-    command: "pnpm dev",
-    port: 5190,
+    command: "npx vite --port 5199",
+    port: 5199,
     reuseExistingServer: true,
     timeout: 30_000,
   },

@@ -28,24 +28,25 @@ if (typeof window === 'undefined') {
   // Main page context — register the service worker
   (async () => {
     if (window.crossOriginIsolated) return; // already isolated
-    if (!window.isSecureContext) { console.warn("[coi-sw] requires HTTPS"); return; }
 
     const reg = await navigator.serviceWorker.register(
       new URL(document.currentScript.src).pathname
-    );
+    ).catch(() => null);
+    if (!reg) return;
 
     if (reg.active && !navigator.serviceWorker.controller) {
-      // Service worker active but not controlling — reload to activate
+      // Service worker active but not controlling — reload once
       window.location.reload();
     } else if (!reg.active) {
-      // Wait for installation to complete, then reload
       const sw = reg.installing || reg.waiting;
-      await new Promise((resolve) => {
-        sw.addEventListener("statechange", () => {
-          if (sw.state === "activated") resolve(undefined);
+      if (sw) {
+        await new Promise((resolve) => {
+          sw.addEventListener("statechange", () => {
+            if (sw.state === "activated") resolve(undefined);
+          });
         });
-      });
-      window.location.reload();
+        window.location.reload();
+      }
     }
   })();
 }

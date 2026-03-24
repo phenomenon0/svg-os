@@ -19,12 +19,13 @@ import { NoteNodeShapeUtil } from "./shapes/NoteNodeShape";
 import { NotebookNodeShapeUtil } from "./shapes/NotebookNodeShape";
 import { AINodeShapeUtil } from "./shapes/AINodeShape";
 import { CompactNodeShapeUtil } from "./shapes/CompactNodeShape";
+import { MediaNodeShapeUtil } from "./shapes/MediaNodeShape";
 import { NodePalette } from "./NodePalette";
 import { NodeInspector } from "./NodeInspector";
 import { AIChat } from "./AIChat";
 import { CollabOverlay } from "./CollabOverlay";
 import { initWasm } from "./lib/wasm-bridge";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import type { Runtime } from "@svg-os/core";
 import { RuntimeProvider, useRuntime } from "./RuntimeContext";
 import { CommandPalette } from "./CommandPalette";
@@ -50,7 +51,162 @@ const customShapeUtils = [
   NotebookNodeShapeUtil,
   AINodeShapeUtil,
   CompactNodeShapeUtil,
+  MediaNodeShapeUtil,
 ];
+
+// ── Canvas-level file drop handler ─────────────────────────────────────────
+
+function parseCSVToRows(text: string): Record<string, string>[] {
+  const lines = text.trim().split("\n").map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const delim = lines[0].includes("\t") ? "\t" : ",";
+  const headers = lines[0].split(delim).map(h => h.trim().replace(/^["']|["']$/g, ""));
+  return lines.slice(1).map(line => {
+    const vals = line.split(delim).map(v => v.trim().replace(/^["']|["']$/g, ""));
+    const row: Record<string, string> = {};
+    headers.forEach((h, j) => row[h] = vals[j] || "");
+    return row;
+  });
+}
+
+function CanvasDropZone({ children }: { children: React.ReactNode }) {
+  const [dragOver, setDragOver] = useState(false);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+
+    // We need the editor — get it from window (exposed by RuntimeBridge)
+    const editor = (window as any).__tldrawEditor;
+    if (!editor) return;
+
+    // Convert screen position to canvas position
+    const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    const mime = file.type;
+
+    // JSON → Data node
+    if (ext === "json" || mime === "application/json") {
+      const text = await file.text();
+      try {
+        JSON.parse(text); // validate
+        editor.createShape({
+          type: "data-node",
+          x: point.x - 150, y: point.y - 100,
+          props: { w: 300, h: 200, label: file.name, dataJson: text },
+        });
+      } catch { /* invalid JSON, skip */ }
+      return;
+    }
+
+    // CSV/TSV → Table node
+    if (ext === "csv" || ext === "tsv" || mime === "text/csv") {
+      const text = await file.text();
+      const rows = parseCSVToRows(text);
+      if (rows.length > 0) {
+        editor.createShape({
+          type: "table-node",
+          x: point.x - 180, y: point.y - 120,
+          props: { w: 400, h: 280, label: file.name, dataJson: JSON.stringify(rows), dataSource: "local" },
+        });
+      }
+      return;
+    }
+
+    // Image → Media node
+    if (mime.startsWith("image/")) {
+      const dataUrl = await readFileAsDataUrl(file);
+      editor.createShape({
+        type: "media-node",
+        x: point.x - 160, y: point.y - 130,
+        props: {
+          w: 320, h: 260, label: file.name.split(".").slice(0, -1).join(".") || file.name,
+          mediaType: "image", src: dataUrl, filename: file.name,
+          mimeType: mime, fileSize: file.size,
+        },
+      });
+      return;
+    }
+
+    // Video → Media node
+    if (mime.startsWith("video/")) {
+      const dataUrl = await readFileAsDataUrl(file);
+      editor.createShape({
+        type: "media-node",
+        x: point.x - 200, y: point.y - 150,
+        props: {
+          w: 400, h: 300, label: file.name.split(".").slice(0, -1).join(".") || file.name,
+          mediaType: "video", src: dataUrl, filename: file.name,
+          mimeType: mime, fileSize: file.size,
+        },
+      });
+      return;
+    }
+
+    // Audio → Media node
+    if (mime.startsWith("audio/")) {
+      const dataUrl = await readFileAsDataUrl(file);
+      editor.createShape({
+        type: "media-node",
+        x: point.x - 160, y: point.y - 80,
+        props: {
+          w: 320, h: 160, label: file.name.split(".").slice(0, -1).join(".") || file.name,
+          mediaType: "audio", src: dataUrl, filename: file.name,
+          mimeType: mime, fileSize: file.size,
+        },
+      });
+      return;
+    }
+
+    // Other text files → Data node with raw content
+    if (mime.startsWith("text/") || ext === "txt" || ext === "md" || ext === "yaml" || ext === "yml" || ext === "xml") {
+      const text = await file.text();
+      editor.createShape({
+        type: "data-node",
+        x: point.x - 150, y: point.y - 100,
+        props: { w: 300, h: 200, label: file.name, dataJson: JSON.stringify({ content: text, filename: file.name }) },
+      });
+      return;
+    }
+  }, []);
+
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+      style={{ position: "fixed", inset: 0 }}
+    >
+      {dragOver && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 9998,
+          background: "rgba(139, 92, 246, 0.08)",
+          border: "3px dashed rgba(139, 92, 246, 0.4)",
+          borderRadius: 12,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          pointerEvents: "none",
+        }}>
+          <span style={{ color: "#8b5cf6", fontSize: 16, fontFamily: "Inter, sans-serif", fontWeight: 500 }}>
+            Drop file to create node
+          </span>
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 /**
  * RuntimeBridge — invisible component that lives inside the tldraw tree
@@ -215,7 +371,7 @@ export function App() {
 
   return (
     <RuntimeProvider>
-      <div style={{ position: "fixed", inset: 0 }}>
+      <CanvasDropZone>
         {!wasmLoaded && (
           <div
             style={{
@@ -245,7 +401,7 @@ export function App() {
             editor.user.updateUserPreferences({ colorScheme: "dark" });
           }}
         />
-      </div>
+      </CanvasDropZone>
     </RuntimeProvider>
   );
 }

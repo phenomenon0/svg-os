@@ -127,6 +127,37 @@ const chartNodeDef: NodeDef = {
   },
 };
 
+// ── Media Node ────────────────────────────────────────────────────────────────
+
+const mediaNodeDef: NodeDef = {
+  type: "view:media",
+  subsystem: "view",
+  description: "Image, video, and audio player",
+  trigger: "auto",
+  inputs: [
+    { name: "in", type: "any", optional: true },
+    { name: "url", type: "text", optional: true },
+  ],
+  outputs: [
+    { name: "data", type: "data" },
+    { name: "meta", type: "data" },
+  ],
+  execute(ctx: ExecContext) {
+    const config = ctx.getConfig();
+    const upstream = ctx.getInput("in") as string | undefined;
+    const urlInput = ctx.getInput("url") as string | undefined;
+
+    const src = urlInput || upstream || (config.src as string) || "";
+    const filename = (config.filename as string) || "";
+    const mimeType = (config.mimeType as string) || "";
+    const fileSize = (config.fileSize as number) || 0;
+    const mediaType = (config.mediaType as string) || "none";
+
+    ctx.setOutput("data", src);
+    ctx.setOutput("meta", { filename, mimeType, fileSize, mediaType, src: src ? "loaded" : "empty" });
+  },
+};
+
 // ── View Subsystem ────────────────────────────────────────────────────────────
 
 export const viewSubsystem: Subsystem = {
@@ -138,6 +169,7 @@ export const viewSubsystem: Subsystem = {
     webviewNodeDef,
     metricNodeDef,
     chartNodeDef,
+    mediaNodeDef,
   ],
   init(_runtime) {
     // View subsystem is ready immediately
