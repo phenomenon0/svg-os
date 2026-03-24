@@ -8,6 +8,8 @@ const cache = new Map<string, string>();
 const pending = new Map<string, Promise<string | null>>();
 
 const PROXIES = [
+  (url: string) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(url)}`,
+  (url: string) => `https://api.cors.lol/?url=${encodeURIComponent(url)}`,
   (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
 ];
 
