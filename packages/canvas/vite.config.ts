@@ -1,11 +1,13 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { viteStaticCopy } from "vite-plugin-static-copy";
+import { viteMcpPlugin } from "./vite-mcp-plugin";
 
 export default defineConfig({
   root: ".",
   plugins: [
     react(),
+    viteMcpPlugin(),
     viteStaticCopy({
       targets: [
         {

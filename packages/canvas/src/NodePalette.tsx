@@ -11,51 +11,12 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { getApiKey, setApiKey, getModel, setModel, testConnection } from "./lib/claude-api";
 import { useRuntime } from "./RuntimeContext";
 import { C, FONT } from "./theme";
-
-// ── Node descriptions ─────────────────────────────────────────────────────────
-
-const NODE_DESCRIPTIONS: Record<string, string> = {
-  "sys:file-open": "Open a file from disk",
-  "sys:file-write": "Save content to a file",
-  "sys:folder": "Browse a directory",
-  "sys:disk": "Storage usage info",
-  "sys:processes": "Runtime metrics & memory",
-  "sys:clipboard-read": "Read from clipboard",
-  "sys:clipboard-write": "Write to clipboard",
-  "sys:screen-capture": "Take a screenshot",
-  "sys:notify": "Send a notification",
-  "sys:network": "Network connection info",
-  "sys:geolocation": "GPS location",
-  "sys:terminal": "Code execution sandbox",
-  "sys:notebook": "Multi-cell notebook",
-  "sys:env": "Environment variables",
-  "data:json": "Static JSON source",
-  "data:table": "Tabular data editor",
-  "data:transform": "Expression transform",
-  "data:filter": "Filter an array",
-  "data:merge": "Merge two objects",
-  "data:fetch": "HTTP fetch",
-  "data:ai": "Claude AI completion",
-  "view:svg-template": "Rendered SVG template",
-  "view:note": "Markdown editor",
-  "view:webview": "Web browser iframe",
-  "view:metric": "Single value display",
-  "view:chart": "Data chart",
-};
-
-// ── Shape mapping ─────────────────────────────────────────────────────────────
-
-const NODE_TO_SHAPE: Record<string, string> = {
-  "sys:terminal": "terminal-node",
-  "sys:notebook": "notebook-node",
-  "data:json": "data-node",
-  "data:table": "table-node",
-  "data:transform": "transform-node",
-  "data:ai": "ai-node",
-  "view:note": "note-node",
-  "view:svg-template": "view-node",
-  "view:webview": "web-view",
-};
+import {
+  NODE_DESCRIPTIONS,
+  NODE_TO_SHAPE,
+  defaultPropsForShape as registryDefaultProps,
+  subsystemColor,
+} from "./lib/node-registry";
 
 // ── System sub-groups ─────────────────────────────────────────────────────────
 
@@ -66,47 +27,8 @@ const SYSTEM_GROUPS = [
   { label: "Runtime", types: ["sys:terminal", "sys:notebook", "sys:env"] },
 ];
 
-// ── Subsystem colors ──────────────────────────────────────────────────────────
-
-function subsystemColor(type: string): string {
-  if (type.startsWith("sys:")) return C.green;
-  if (type.startsWith("data:")) return C.blue;
-  if (type.startsWith("view:")) return C.accent;
-  return C.muted;
-}
-
-// ── Default props per shape type ──────────────────────────────────────────────
-
-function defaultPropsForShape(shapeType: string): Record<string, unknown> {
-  switch (shapeType) {
-    case "terminal-node":
-      return {
-        w: 320, h: 220, label: "Terminal", mode: "js",
-        history: JSON.stringify([
-          { type: "output", text: "SVG OS \u2014 raw terminal" },
-        ]),
-      };
-    case "notebook-node":
-      return {
-        w: 320, h: 240, label: "Notebook",
-        cells: JSON.stringify([{ id: "c1", type: "code", lang: "python", source: "print('Hello!')\n2 ** 10", output: "" }]),
-      };
-    case "data-node":
-      return { w: 220, h: 160, dataJson: '{"name": "Example", "score": 95}', label: "Data" };
-    case "table-node":
-      return { w: 280, h: 180, label: "Table", dataJson: "[]", selectedRow: -1, outputMode: "all" };
-    case "transform-node":
-      return { w: 160, h: 40, expression: "$.value", label: "Transform" };
-    case "ai-node":
-      return { w: 320, h: 240, label: "AI", prompt: "", response: "", model: getModel(), status: "idle", errorMessage: "" };
-    case "note-node":
-      return { w: 240, h: 180, label: "Note", content: "", mode: "edit" };
-    case "web-view":
-      return { w: 360, h: 280, url: "https://femiadeniran.com", label: "WebView", mode: "url", htmlContent: "" };
-    default:
-      return { w: 200, h: 150, label: "Node" };
-  }
-}
+// Use shared registry's defaultPropsForShape
+const defaultPropsForShape = registryDefaultProps;
 
 // ── Dummy data for pre-rendered SVG templates ─────────────────────────────────
 

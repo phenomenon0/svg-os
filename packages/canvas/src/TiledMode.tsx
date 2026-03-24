@@ -32,7 +32,7 @@ const GAP = 2; // thin cosmetic gap between panels
 
 // ── Resolve layout tree into flat shape→rect mapping ─────────────────────────
 
-function resolveLayout(
+export function resolveLayout(
   node: TiledPanelNode | TiledLayout,
   bounds: Rect,
 ): Map<string, Rect> {
@@ -179,4 +179,80 @@ export function handleTiledResize(editor: Editor, layout: TiledLayout): void {
 
 export function clearSavedPositions(): void {
   savedPositions.clear();
+}
+
+// ── Tree mutation: split a leaf into two panels ──────────────────────────────
+
+function splitNode(
+  node: TiledPanelNode,
+  targetShapeId: string,
+  direction: "horizontal" | "vertical",
+  newShapeId: string,
+): TiledPanelNode {
+  if (node.type === "leaf") {
+    if (node.shapeId === targetShapeId) {
+      return {
+        type: "split",
+        direction,
+        children: [
+          { type: "leaf", shapeId: node.shapeId },
+          { type: "leaf", shapeId: newShapeId },
+        ],
+        ratio: node.ratio,
+      };
+    }
+    return node;
+  }
+
+  // split node — recurse into children
+  return {
+    ...node,
+    children: node.children.map((child) =>
+      splitNode(child, targetShapeId, direction, newShapeId),
+    ),
+  };
+}
+
+export function splitLayoutLeaf(
+  layout: TiledLayout,
+  targetShapeId: string,
+  direction: "horizontal" | "vertical",
+  newShapeId: string,
+): TiledLayout {
+  return {
+    ...layout,
+    children: layout.children.map((child) =>
+      splitNode(child, targetShapeId, direction, newShapeId),
+    ),
+  };
+}
+
+// ── Tree mutation: remove a leaf (collapse parent split) ─────────────────────
+
+function removeNode(
+  node: TiledPanelNode,
+  targetShapeId: string,
+): TiledPanelNode | null {
+  if (node.type === "leaf") {
+    return node.shapeId === targetShapeId ? null : node;
+  }
+
+  const remaining = node.children
+    .map((child) => removeNode(child, targetShapeId))
+    .filter((child): child is TiledPanelNode => child !== null);
+
+  if (remaining.length === 0) return null;
+  if (remaining.length === 1) return { ...remaining[0], ratio: node.ratio };
+  return { ...node, children: remaining };
+}
+
+export function removeLayoutLeaf(
+  layout: TiledLayout,
+  targetShapeId: string,
+): TiledLayout {
+  const remaining = layout.children
+    .map((child) => removeNode(child, targetShapeId))
+    .filter((child): child is TiledPanelNode => child !== null);
+
+  return { ...layout, children: remaining };
 }

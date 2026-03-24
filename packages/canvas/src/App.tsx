@@ -47,6 +47,9 @@ import {
 } from "./lib/workspace";
 import { WorkspaceSelector, PresetModal, WORKSPACE_BAR_HEIGHT } from "./WorkspaceSelector";
 import { applyTiledLayout, restoreCanvasMode, clearSavedPositions } from "./TiledMode";
+import { TiledPanelOverlay } from "./TiledPanelOverlay";
+import { createCanvasAPI } from "./lib/canvas-api";
+import { initMcpBridge } from "./lib/mcp-bridge";
 
 const customShapeUtils = [
   DataNodeShapeUtil,
@@ -172,9 +175,13 @@ function RuntimeBridge() {
 function CanvasOverlays({
   onOpenPresetModal,
   onToggleTiled,
+  workspace,
+  setWorkspace,
 }: {
   onOpenPresetModal?: () => void;
   onToggleTiled?: () => void;
+  workspace?: WorkspaceDescriptor | null;
+  setWorkspace?: (d: WorkspaceDescriptor) => void;
 }) {
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
 
@@ -201,6 +208,12 @@ function CanvasOverlays({
         onOpenPresetModal={onOpenPresetModal}
         onToggleTiled={onToggleTiled}
       />
+      {workspace && workspace.mode === "tiled" && setWorkspace && (
+        <TiledPanelOverlay
+          descriptor={workspace}
+          setDescriptor={setWorkspace}
+        />
+      )}
     </>
   );
 }
@@ -217,6 +230,25 @@ export function App() {
       .then(() => setWasmLoaded(true))
       .catch(console.error);
   }, []);
+
+  // ── MCP bridge: connect browser to Vite MCP plugin ──────────────────
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    const runtime = runtimeRef.current;
+    if (!editor) return;
+
+    const api = createCanvasAPI(
+      editor,
+      runtime,
+      () => workspaceRef.current,
+      setWorkspace,
+    );
+    const bridge = initMcpBridge(api);
+    return () => bridge.disconnect();
+  }, [wasmLoaded]); // re-init after wasm loads (editor is ready)
 
   const handleExitWorkspace = useCallback(() => {
     if (workspace && editorRef.current && runtimeRef.current) {
@@ -294,9 +326,11 @@ export function App() {
       <CanvasOverlays
         onOpenPresetModal={() => setPresetModalOpen(true)}
         onToggleTiled={handleToggleTiled}
+        workspace={workspace}
+        setWorkspace={setWorkspace}
       />
     ),
-    [handleToggleTiled],
+    [handleToggleTiled, workspace],
   );
 
   const hasWorkspaceBar = workspace !== null;
