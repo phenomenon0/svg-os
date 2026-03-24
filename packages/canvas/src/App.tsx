@@ -75,6 +75,16 @@ function RuntimeBridge() {
   const editor = useEditor();
   const runtime = useRuntime();
 
+  // Expose editor and runtime for E2E tests
+  useEffect(() => {
+    (window as any).__tldrawEditor = editor;
+    (window as any).__svgosRuntime = runtime;
+    return () => {
+      delete (window as any).__tldrawEditor;
+      delete (window as any).__svgosRuntime;
+    };
+  }, [editor, runtime]);
+
   useEffect(() => {
     if (!runtime) return;
     // ── Initial sync: shapes + edges ──────────────────────────────────

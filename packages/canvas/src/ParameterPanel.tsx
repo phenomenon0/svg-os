@@ -264,13 +264,13 @@ function ViewNodeParams({
   shape: ViewNodeShape;
   editor: ReturnType<typeof useEditor>;
 }) {
-  const { viewType, typeId, variant } = shape.props;
+  const { viewType, typeId } = shape.props;
   const viewData: Record<string, unknown> = (() => {
     try { return JSON.parse((shape.props as any).data || "{}"); } catch { return {}; }
   })();
 
   const isSvg = viewType === "svg-template";
-  const displayType = isSvg ? `SVG: ${typeId || "unknown"}` : `HTML: ${variant || "card"}`;
+  const displayType = isSvg ? `SVG: ${typeId || "unknown"}` : "HTML";
 
   // Get slot definitions for SVG templates
   let slots: Array<{ field: string; bind_type: string }> = [];

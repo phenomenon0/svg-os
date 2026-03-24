@@ -7,12 +7,57 @@ export class Scheduler {
   private running = false;
   private cancelled = false;
   private rerunRequested = false;
+  private autoTriggerTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly concurrencyLimit = getDefaultConcurrency();
 
   constructor(
     private graph: Graph,
     private events: EventBus,
   ) {}
+
+  /** Wire up auto-trigger: listen for graph changes, auto-run trigger:"auto" nodes */
+  enableAutoTrigger(): void {
+    const scheduleAuto = () => {
+      if (this.autoTriggerTimer) clearTimeout(this.autoTriggerTimer);
+      this.autoTriggerTimer = setTimeout(() => {
+        this.executeAutoNodes().catch(() => {});
+      }, 16); // ~1 frame debounce
+    };
+
+    this.events.on("node:updated", scheduleAuto);
+    this.events.on("edge:created", scheduleAuto);
+    this.events.on("edge:removed", scheduleAuto);
+  }
+
+  /** Execute only nodes with trigger:"auto" (or no trigger, defaulting to auto) */
+  async executeAutoNodes(): Promise<void> {
+    const fullPlan = this.plan();
+    const autoNodeIds = new Set<NodeId>();
+
+    for (const nodeId of fullPlan.order) {
+      const node = this.graph.getNode(nodeId);
+      if (!node) continue;
+      const def = this.graph.getNodeDef(node.type);
+      if (!def) continue;
+      const trigger = def.trigger || "auto";
+      if (trigger === "auto") {
+        autoNodeIds.add(nodeId);
+      }
+    }
+
+    if (autoNodeIds.size === 0) return;
+
+    const subPlan: ExecutionPlan = {
+      order: fullPlan.order.filter((id: NodeId) => autoNodeIds.has(id)),
+      levels: fullPlan.levels
+        .map((level: NodeId[]) => level.filter((id: NodeId) => autoNodeIds.has(id)))
+        .filter((level: NodeId[]) => level.length > 0),
+      cycleNodes: fullPlan.cycleNodes.filter((id: NodeId) => autoNodeIds.has(id)),
+      hasCycle: fullPlan.cycleNodes.some((id: NodeId) => autoNodeIds.has(id)),
+    };
+
+    await this.execute(subPlan);
+  }
 
   plan(): ExecutionPlan {
     return this.graph.planExecution();
@@ -108,12 +153,12 @@ export class Scheduler {
     }
 
     const subPlan: ExecutionPlan = {
-      order: fullPlan.order.filter(id => downstream.has(id)),
+      order: fullPlan.order.filter((id: NodeId) => downstream.has(id)),
       levels: fullPlan.levels
-        .map(level => level.filter(id => downstream.has(id)))
-        .filter(level => level.length > 0),
-      cycleNodes: fullPlan.cycleNodes.filter(id => downstream.has(id)),
-      hasCycle: fullPlan.cycleNodes.some(id => downstream.has(id)),
+        .map((level: NodeId[]) => level.filter((id: NodeId) => downstream.has(id)))
+        .filter((level: NodeId[]) => level.length > 0),
+      cycleNodes: fullPlan.cycleNodes.filter((id: NodeId) => downstream.has(id)),
+      hasCycle: fullPlan.cycleNodes.some((id: NodeId) => downstream.has(id)),
     };
 
     await this.execute(subPlan);
@@ -129,6 +174,17 @@ export class Scheduler {
 
   getOutput(nodeId: NodeId, portName: string): unknown {
     return this.outputCache.get(`${nodeId}:${portName}`);
+  }
+
+  getAllOutputs(nodeId: NodeId): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of this.outputCache.entries()) {
+      if (key.startsWith(`${nodeId}:`)) {
+        const port = key.slice(nodeId.length + 1);
+        result[port] = value;
+      }
+    }
+    return result;
   }
 
   private async executeLevel(level: NodeId[]): Promise<void> {
@@ -191,8 +247,20 @@ export class Scheduler {
     });
 
     try {
-      await def.execute(ctx, nodeId);
+      await def.execute(ctx);
       const completedAt = Date.now();
+
+      // Auto-alias: if no explicit "out" port was set, alias the first named output
+      if (!this.outputCache.has(`${nodeId}:out`)) {
+        const firstOutput = def.outputs.find(o => o.name !== "out");
+        if (firstOutput) {
+          const firstValue = this.outputCache.get(`${nodeId}:${firstOutput.name}`);
+          if (firstValue !== undefined) {
+            this.outputCache.set(`${nodeId}:out`, firstValue);
+            this.graph.updateNode(nodeId, { data: { out: firstValue } });
+          }
+        }
+      }
 
       this.graph.updateNode(nodeId, {
         status: "done",
@@ -232,32 +300,27 @@ export class Scheduler {
 
   private buildContext(nodeId: NodeId, _def: NodeDef): ExecContext {
     return {
-      // Note: the nodeId parameter is ignored by design. The context is already
-      // bound to a specific node, so getInput always reads edges for `nodeId`.
-      // The parameter exists for API consistency with the ExecContext interface,
-      // where callers conventionally pass their own nodeId.
-      getInput: (_nid: NodeId, portName: string) => {
-        // Find edges that connect to this node's port
+      nodeId,
+
+      getInput: (portName: string) => {
         const edges = this.graph.getEdgesTo(nodeId, portName);
         if (edges.length === 0) return undefined;
         if (edges.length === 1) {
           return this.outputCache.get(`${edges[0].from.node}:${edges[0].from.port}`);
         }
-        // Multiple inputs: collect as array
         return edges.map(e =>
           this.outputCache.get(`${e.from.node}:${e.from.port}`)
         );
       },
 
-      setOutput: (_nid: NodeId, portName: string, value: unknown) => {
+      setOutput: (portName: string, value: unknown) => {
         this.outputCache.set(`${nodeId}:${portName}`, value);
-        // Also store in node state
         this.graph.updateNode(nodeId, {
           data: { [portName]: value },
         });
       },
 
-      getConfig: (_nid: NodeId) => {
+      getConfig: () => {
         return this.graph.getNode(nodeId)?.config || {};
       },
 

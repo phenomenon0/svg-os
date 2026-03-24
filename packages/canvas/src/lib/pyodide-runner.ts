@@ -6,7 +6,7 @@
  * Auto-detects import statements and installs missing packages via micropip.
  */
 
-import type { ExecResult } from "./code-runner";
+import type { ExecResult } from "@svg-os/core";
 
 let pyodideInstance: any = null;
 let loading: Promise<any> | null = null;

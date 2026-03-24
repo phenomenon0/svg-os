@@ -70,6 +70,16 @@ export class Runtime {
     await this.scheduler.executeNode(id);
   }
 
+  // ── Output access ──────────────────────────────────────────────────
+
+  getOutput(nodeId: NodeId, portName: string): unknown {
+    return this.scheduler.getOutput(nodeId, portName);
+  }
+
+  getAllOutputs(nodeId: NodeId): Record<string, unknown> {
+    return this.scheduler.getAllOutputs(nodeId);
+  }
+
   // ── Persistence ─────────────────────────────────────────────────────
 
   save(): GraphSnapshot {

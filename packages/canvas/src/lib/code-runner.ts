@@ -8,17 +8,11 @@
  * Runtimes are lazy-loaded on first use.
  */
 
-import { evalJS, formatResult, type EvalResult } from "./eval-sandbox";
+import type { ExecResult, Lang } from "@svg-os/core";
+import { evalJS, formatResult } from "./eval-sandbox";
 import { runPython } from "./pyodide-runner";
 export { formatResult };
-
-export type Lang = "js" | "python" | "ruby" | "c" | "cpp" | "sql" | "php";
-
-export interface ExecResult {
-  output: string[];
-  result: unknown;
-  error: string | null;
-}
+export type { ExecResult, Lang };
 
 const LANG_LABELS: Record<Lang, string> = {
   js: "JavaScript",

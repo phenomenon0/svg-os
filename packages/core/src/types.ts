@@ -17,6 +17,9 @@ export interface PortDef {
   optional?: boolean;
 }
 
+// Trigger mode: when does a node execute?
+export type TriggerMode = "auto" | "manual" | "once";
+
 // Node definition (registered by subsystems)
 export interface NodeDef {
   type: string;
@@ -24,6 +27,9 @@ export interface NodeDef {
   inputs: PortDef[];
   outputs: PortDef[];
   execute: ExecuteFn;
+  trigger?: TriggerMode;
+  description?: string;
+  icon?: string;
   lifecycle?: NodeLifecycle;
   schema?: Record<string, unknown>;
   capabilities?: Capability[];
@@ -77,7 +83,19 @@ export interface CoreEvent<T = unknown> {
   payload: T;
 }
 
-// Execution
+// Execution context — pre-bound to a node, no nodeId needed
+export interface ExecContext {
+  getInput(portName: string): unknown;
+  setOutput(portName: string, value: unknown): void;
+  getConfig(): Record<string, unknown>;
+  emit(event: CoreEvent): void;
+  /** Node ID this context is bound to (for execute functions that need it) */
+  readonly nodeId: NodeId;
+}
+
+export type ExecuteFn = (ctx: ExecContext) => Promise<void> | void;
+
+// Execution plan
 export interface ExecutionPlan {
   order: NodeId[];
   levels: NodeId[][];
@@ -85,20 +103,19 @@ export interface ExecutionPlan {
   hasCycle: boolean;
 }
 
-export interface ExecContext {
-  /** Get input value for a port. The nodeId param is unused (context is pre-bound) but kept for API clarity. */
-  getInput(nodeId: NodeId, portName: string): unknown;
-  setOutput(nodeId: NodeId, portName: string, value: unknown): void;
-  getConfig(nodeId: NodeId): Record<string, unknown>;
-  emit(event: CoreEvent): void;
-}
-
-export type ExecuteFn = (ctx: ExecContext, nodeId: NodeId) => Promise<void> | void;
-
 export interface ExecutionPolicy {
   mode?: "sync" | "async" | "exclusive";
   concurrencyKey?: string;
   cache?: "none" | "inputs";
+}
+
+// Code execution result (canonical type, used by subsystems and canvas)
+export type Lang = "js" | "python" | "ruby" | "c" | "cpp" | "sql" | "php";
+
+export interface ExecResult {
+  output: string[];
+  result: unknown;
+  error: string | null;
 }
 
 // Persistence

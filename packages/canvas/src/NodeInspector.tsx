@@ -191,6 +191,7 @@ export function NodeInspector() {
           side="output"
           nodeId={runtimeNodeId}
           runtime={runtime}
+          outputValues={runtimeNodeId && runtime ? runtime.getAllOutputs(runtimeNodeId) : undefined}
         />
       )}
 
@@ -417,12 +418,14 @@ function PortSection({
   side,
   nodeId,
   runtime,
+  outputValues,
 }: {
   title: string;
   ports: PortDef[];
   side: "input" | "output";
   nodeId: string | undefined;
   runtime: any;
+  outputValues?: Record<string, unknown>;
 }) {
   // Check connections
   const edges = nodeId && runtime ? runtime.graph.getEdges() : [];
@@ -438,38 +441,63 @@ function PortSection({
               : e.from.node === nodeId && e.from.port === port.name,
           );
           const color = PORT_TYPE_COLORS[port.type] || C.faint;
+          const outputVal = side === "output" && outputValues ? outputValues[port.name] : undefined;
+          const hasValue = outputVal !== undefined;
 
           return (
-            <div
-              key={port.name}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 4,
-                fontSize: 11,
-              }}
-            >
-              <span
+            <div key={port.name} style={{ marginBottom: 4 }}>
+              <div
                 style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: connected ? color : "transparent",
-                  border: `1.5px solid ${color}`,
-                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 11,
                 }}
-              />
-              <span style={{ color: C.fgSoft, fontFamily: FONT.mono, fontSize: 10 }}>
-                {port.name}
-              </span>
-              <span style={{ color: C.faint, fontSize: 9, fontFamily: FONT.mono }}>
-                ({port.type})
-              </span>
-              {connected && (
-                <span style={{ marginLeft: "auto", fontSize: 9, color: C.green }}>
-                  {side === "input" ? "connected" : "connected"}
+              >
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: connected ? color : "transparent",
+                    border: `1.5px solid ${color}`,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ color: C.fgSoft, fontFamily: FONT.mono, fontSize: 10 }}>
+                  {port.name}
                 </span>
+                <span style={{ color: C.faint, fontSize: 9, fontFamily: FONT.mono }}>
+                  ({port.type})
+                </span>
+                {connected && (
+                  <span style={{ marginLeft: "auto", fontSize: 9, color: C.green }}>
+                    connected
+                  </span>
+                )}
+                {!connected && hasValue && (
+                  <span style={{ marginLeft: "auto", fontSize: 9, color: C.accent }}>
+                    has data
+                  </span>
+                )}
+              </div>
+              {hasValue && (
+                <div style={{
+                  marginTop: 2,
+                  marginLeft: 12,
+                  padding: "3px 6px",
+                  background: C.bgDeep,
+                  borderRadius: 3,
+                  fontSize: 10,
+                  fontFamily: FONT.mono,
+                  color: C.fgSoft,
+                  maxHeight: 80,
+                  overflow: "auto",
+                  wordBreak: "break-all",
+                  whiteSpace: "pre-wrap",
+                }}>
+                  {formatOutputValue(outputVal)}
+                </div>
               )}
             </div>
           );
@@ -477,6 +505,20 @@ function PortSection({
       </div>
     </div>
   );
+}
+
+function formatOutputValue(val: unknown): string {
+  if (val === undefined) return "undefined";
+  if (val === null) return "null";
+  if (typeof val === "string") {
+    return val.length > 200 ? val.slice(0, 200) + "..." : val;
+  }
+  try {
+    const json = JSON.stringify(val, null, 2);
+    return json.length > 300 ? json.slice(0, 300) + "..." : json;
+  } catch {
+    return String(val);
+  }
 }
 
 // ── Status section ──────────────────────────────────────────────────────────
@@ -651,9 +693,8 @@ function inferSubsystem(nodeType: string): string {
 // Shows when an arrow is selected. Displays source→target info and available
 // data fields with toggles to filter what passes through.
 
-import { nodeOutputs } from "./lib/reactive-engine";
-
 function EdgeInspector({ editor, arrowId }: { editor: any; arrowId: string }) {
+  const runtime = useRuntime();
   const bindings = editor.getBindingsFromShape(arrowId, "arrow");
   const startBinding = bindings.find((b: any) => b.props?.terminal === "start");
   const endBinding = bindings.find((b: any) => b.props?.terminal === "end");
@@ -668,9 +709,20 @@ function EdgeInspector({ editor, arrowId }: { editor: any; arrowId: string }) {
     ? (targetShape.props as any).label || targetShape.type
     : "?";
 
-  // Get the data currently flowing through this edge
-  const sourceOutput = sourceShape ? nodeOutputs.get(sourceShape.id) : null;
-  const fields = sourceOutput ? Object.entries(sourceOutput).filter(([k]) => !k.startsWith("_")) : [];
+  // Get the data currently flowing through this edge from the runtime scheduler
+  const sourceNodeId = sourceShape ? getNodeId(sourceShape.id) : undefined;
+  const sourceOutputs = sourceNodeId && runtime ? runtime.getAllOutputs(sourceNodeId) : null;
+
+  // Flatten: if there's a single "out" key that is an object, show its fields
+  let fields: [string, unknown][] = [];
+  if (sourceOutputs) {
+    const keys = Object.keys(sourceOutputs);
+    if (keys.length === 1 && keys[0] === "out" && typeof sourceOutputs.out === "object" && sourceOutputs.out !== null && !Array.isArray(sourceOutputs.out)) {
+      fields = Object.entries(sourceOutputs.out as Record<string, unknown>).filter(([k]) => !k.startsWith("_"));
+    } else {
+      fields = Object.entries(sourceOutputs).filter(([k]) => !k.startsWith("_"));
+    }
+  }
 
   return (
     <div style={{

@@ -2,9 +2,11 @@
 export type {
   NodeId, PortId, EdgeId, SubsystemId,
   DataType, PortDef, NodeDef, NodeLifecycle, NodeState,
+  TriggerMode,
   Edge,
   EventType, CoreEvent,
   ExecutionPlan, ExecContext, ExecuteFn, ExecutionPolicy,
+  Lang, ExecResult,
   GraphSnapshot,
   Capability,
   LogEntry,

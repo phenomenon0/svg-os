@@ -24,16 +24,13 @@ interface Cell {
 
 export type NotebookNodeShape = TLBaseShape<
   "notebook-node",
-  { w: number; h: number; label: string; cells: string;
-    // Legacy props kept for backward compat with cached shapes
-    status: string; runNonce: number; runMode: string; activeCellId: string; }
+  { w: number; h: number; label: string; cells: string; }
 >;
 
 export class NotebookNodeShapeUtil extends ShapeUtil<NotebookNodeShape> {
   static override type = "notebook-node" as const;
   static override props = {
     w: T.number, h: T.number, label: T.string, cells: T.string,
-    status: T.string, runNonce: T.number, runMode: T.string, activeCellId: T.string,
   };
 
   getDefaultProps(): NotebookNodeShape["props"] {
@@ -42,7 +39,6 @@ export class NotebookNodeShapeUtil extends ShapeUtil<NotebookNodeShape> {
       cells: JSON.stringify([
         { id: "c1", type: "code", lang: "js", source: "", output: "" },
       ]),
-      status: "idle", runNonce: 0, runMode: "", activeCellId: "",
     };
   }
 

@@ -1,10 +1,4 @@
-export type Lang = "js" | "python" | "ruby" | "c" | "cpp" | "sql" | "php";
-
-export interface ExecResult {
-  output: string[];
-  result: unknown;
-  error: string | null;
-}
+import type { ExecResult, Lang } from "@svg-os/core";
 
 export interface TerminalHistoryEntry {
   type: "input" | "output" | "error";
@@ -263,7 +257,9 @@ function mergeResult(
   cellOutputs[`cell:${index}`] = value;
 }
 
-async function executeCode(
+// ── Code execution ──────────────────────────────────────────────────────────
+
+export async function executeCode(
   lang: Lang,
   code: string,
   input?: Record<string, unknown>,
@@ -275,7 +271,8 @@ async function executeCode(
   return runViaWasi(lang, code, input);
 }
 
-function evalJS(code: string, input?: Record<string, unknown>): ExecResult {
+/** Evaluate JS code in a sandbox with input/$/data variables */
+export function evalJS(code: string, input?: Record<string, unknown>): ExecResult {
   const logs: string[] = [];
   const origLog = console.log;
   const origWarn = console.warn;
@@ -354,7 +351,7 @@ async function evalTerminalJs(
         const fn = new Function(...scopeKeys, `"use strict"; ${code}; return ${variableName};`);
         scope[variableName] = await fn(...scopeValues);
       } catch {
-        // Ignore partial assignment failures and keep terminal usable.
+        // Ignore partial assignment failures
       }
     }
 
@@ -449,6 +446,8 @@ async function runViaWasi(
   }
 }
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
 function formatNotebookOutput(execution: ExecResult): string {
   const lines = [...execution.output];
   if (execution.error) {
@@ -460,7 +459,7 @@ function formatNotebookOutput(execution: ExecResult): string {
   return lines.join("\n");
 }
 
-function formatResult(value: unknown): string {
+export function formatResult(value: unknown): string {
   if (value === undefined) return "";
   if (value === null) return "null";
   if (typeof value === "object") {
@@ -473,7 +472,7 @@ function formatResult(value: unknown): string {
   return String(value);
 }
 
-function resultToData(value: unknown): Record<string, unknown> {
+export function resultToData(value: unknown): Record<string, unknown> {
   if (value === undefined || value === null) return {};
   if (typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>;

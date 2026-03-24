@@ -21,8 +21,6 @@ export type ViewNodeShape = TLBaseShape<
     viewType: string;
     typeId: string;
     renderedContent: string;
-    variant: string;
-    htmlTitle: string;
     htmlContent: string;
     data: string;
   }
@@ -37,8 +35,6 @@ export class ViewNodeShapeUtil extends ShapeUtil<ViewNodeShape> {
     viewType: T.string,
     typeId: T.string,
     renderedContent: T.string,
-    variant: T.string,
-    htmlTitle: T.string,
     htmlContent: T.string,
     data: T.string,
   };
@@ -50,8 +46,6 @@ export class ViewNodeShapeUtil extends ShapeUtil<ViewNodeShape> {
       viewType: "svg-template",
       typeId: "",
       renderedContent: "",
-      variant: "",
-      htmlTitle: "",
       htmlContent: "",
       data: "",
     };
