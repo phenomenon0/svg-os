@@ -201,7 +201,10 @@ export function App() {
   useEffect(() => {
     initWasm()
       .then(() => setWasmLoaded(true))
-      .catch(console.error);
+      .catch((err) => {
+        console.warn("[svg-os] WASM init failed, continuing without bridge:", err);
+        setWasmLoaded(true); // Don't block the canvas
+      });
   }, []);
 
   return (
