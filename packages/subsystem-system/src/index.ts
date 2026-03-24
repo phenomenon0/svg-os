@@ -247,7 +247,6 @@ const notebookNodeDef: NodeDef = {
     // so ports stay wired.
     const config = ctx.getConfig();
     const cellsRaw = typeof config.cells === "string" ? config.cells : "[]";
-    ctx.setOutput("cells", cellsRaw);
 
     try {
       const cells = JSON.parse(cellsRaw) as Array<{ id: string; type: string; output?: string }>;
@@ -265,9 +264,12 @@ const notebookNodeDef: NodeDef = {
           ctx.setOutput(`cell:${i}`, allOutputs[`cell${i}`] ?? out);
         }
       }
+      // Set "all" first — this is the primary output that auto-aliases to "out"
       ctx.setOutput("all", allOutputs);
+      ctx.setOutput("cells", cellsRaw);
     } catch {
       ctx.setOutput("all", {});
+      ctx.setOutput("cells", cellsRaw);
     }
   },
 };
