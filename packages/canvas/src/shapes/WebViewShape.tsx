@@ -290,18 +290,13 @@ function WebViewContent({ shape }: { shape: WebViewShape }) {
     }
   }, [mode, activeUrl, fetchViaProxy]);
 
-  // Also proactively fetch via proxy for known-problematic URLs
-  // (iframe onError doesn't always fire for X-Frame-Options)
+  // Proactively fetch via proxy immediately — don't wait for iframe failure
+  // (iframe onError doesn't fire for X-Frame-Options, and waiting is slow)
   useEffect(() => {
     if (mode !== "url" || !activeUrl || activeUrl === "about:blank") return;
-    // Give the direct iframe 2 seconds, then try proxy as fallback
-    const timer = setTimeout(() => {
-      if (!proxiedHtml && proxyAttemptedRef.current !== activeUrl) {
-        fetchViaProxy(activeUrl);
-      }
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [activeUrl, mode, proxiedHtml, fetchViaProxy]);
+    // Fetch via proxy immediately in parallel with direct iframe
+    fetchViaProxy(activeUrl);
+  }, [activeUrl, mode, fetchViaProxy]);
 
   // Reset proxy state when URL changes
   useEffect(() => {
