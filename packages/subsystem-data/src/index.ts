@@ -48,16 +48,34 @@ const tableNodeDef: NodeDef = {
     const config = ctx.getConfig();
     const inputData = ctx.getInput("in") ?? ctx.getInput("data");
 
-    let rows: unknown[];
+    let rawRows: unknown[];
     if (Array.isArray(inputData)) {
-      rows = inputData;
+      rawRows = inputData;
     } else {
       try {
-        rows = JSON.parse((config.dataJson as string) || "[]");
+        rawRows = JSON.parse((config.dataJson as string) || "[]");
       } catch {
-        rows = [];
+        rawRows = [];
       }
     }
+
+    // Auto-coerce: strings that look like numbers → actual numbers
+    const rows = rawRows.map(row => {
+      if (typeof row !== "object" || row === null || Array.isArray(row)) return row;
+      const coerced: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(row as Record<string, unknown>)) {
+        if (typeof v === "string" && v.trim() !== "" && !isNaN(Number(v))) {
+          coerced[k] = Number(v);
+        } else if (v === "true") {
+          coerced[k] = true;
+        } else if (v === "false") {
+          coerced[k] = false;
+        } else {
+          coerced[k] = v;
+        }
+      }
+      return coerced;
+    });
 
     ctx.setOutput("rows", rows);
 

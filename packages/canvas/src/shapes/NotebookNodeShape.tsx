@@ -108,7 +108,11 @@ function NotebookComponent({ shape }: { shape: NotebookNodeShape }) {
       const edges = runtime.graph.getEdgesTo(nodeId, portName);
       for (const edge of edges) {
         const val = runtime.getOutput(edge.from.node, edge.from.port);
-        if (val && typeof val === "object" && !Array.isArray(val)) {
+        if (Array.isArray(val)) {
+          // Arrays passed as 'data' and 'rows' — accessible as data[0], data.length, etc.
+          upstream.data = val;
+          upstream.rows = val;
+        } else if (val && typeof val === "object") {
           Object.assign(upstream, val);
         } else if (val !== undefined) {
           upstream.value = val;
