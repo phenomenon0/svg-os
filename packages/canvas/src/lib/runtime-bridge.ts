@@ -271,13 +271,16 @@ function buildShapePatch(
   }
 
   if (nodeType === "data:table") {
-    // Sync upstream data into table when connected
+    // Only sync upstream data if user hasn't manually edited (dataSource !== "local")
+    // Once user edits, they own the data until they reconnect upstream
+    if (shape.props.dataSource === "local") return null;
+
     const rows = data.rows;
     if (Array.isArray(rows) && rows.length > 0) {
       try {
         const json = JSON.stringify(rows);
         if (json !== shape.props.dataJson) {
-          return { dataJson: json };
+          return { dataJson: json, dataSource: "upstream" };
         }
       } catch { /* */ }
     }

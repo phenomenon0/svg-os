@@ -489,16 +489,19 @@ test.describe("Data Flow: Real Nodes", () => {
     // Wait for iframe to be present and start loading
     await page.waitForTimeout(2000);
 
-    // Verify the iframe src is set correctly
-    const iframeSrc = await page.evaluate(() => {
+    // Verify the iframe loaded (via proxy, so srcdoc is used, not src)
+    const iframeLoaded = await page.evaluate(() => {
       const iframes = document.querySelectorAll("iframe");
       for (const iframe of iframes) {
-        if (iframe.src.includes("femiadeniran")) return iframe.src;
+        // Proxy loads via srcdoc
+        if (iframe.srcdoc && iframe.srcdoc.length > 500) return true;
+        // Direct loads via src
+        if (iframe.src && iframe.src.includes("femiadeniran")) return true;
       }
-      return null;
+      return false;
     });
 
-    expect(iframeSrc).toContain("femiadeniran.com");
+    expect(iframeLoaded).toBe(true);
 
     await page.screenshot({ path: "test-results/flow-09-webview-femiadeniran.png" });
   });

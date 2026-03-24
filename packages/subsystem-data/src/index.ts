@@ -42,6 +42,7 @@ const tableNodeDef: NodeDef = {
   outputs: [
     { name: "rows", type: "array" },
     { name: "selected", type: "data", optional: true },
+    { name: "schema", type: "data", optional: true },
   ],
   execute(ctx: ExecContext) {
     const config = ctx.getConfig();
@@ -60,6 +61,7 @@ const tableNodeDef: NodeDef = {
 
     ctx.setOutput("rows", rows);
 
+    // Selected row
     const selectedIndex = config.selectedRow as number;
     if (
       typeof selectedIndex === "number" &&
@@ -67,6 +69,24 @@ const tableNodeDef: NodeDef = {
       selectedIndex < rows.length
     ) {
       ctx.setOutput("selected", rows[selectedIndex]);
+    }
+
+    // Infer column types for downstream consumers
+    if (rows.length > 0 && typeof rows[0] === "object" && rows[0] !== null) {
+      const cols = Object.keys(rows[0] as Record<string, unknown>);
+      const schema: Record<string, string> = {};
+      for (const col of cols) {
+        const vals = rows.map(r => (r as Record<string, unknown>)[col]).filter(v => v != null && v !== "");
+        if (vals.length === 0) { schema[col] = "string"; continue; }
+        if (vals.every(v => typeof v === "number" || (typeof v === "string" && !isNaN(Number(v)) && v.trim() !== ""))) {
+          schema[col] = "number";
+        } else if (vals.every(v => v === true || v === false || v === "true" || v === "false")) {
+          schema[col] = "boolean";
+        } else {
+          schema[col] = "string";
+        }
+      }
+      ctx.setOutput("schema", schema);
     }
   },
 };
